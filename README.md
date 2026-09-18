@@ -1,101 +1,112 @@
-# Chamber Draw — Godot Prototype (Core Logic)
+# Chamber Draw
 
-This is a **local, no-art, no-networking** prototype of the core card game
-loop described in `Chamber_Draw_Game_Design_Doc.md`. Its only purpose is to
-prove out the rules engine — Multi-Deck System, Chamber Draw resolution, all
-action/wild cards, and both win-condition modes — before any UI, art, or
-Epic Online Services networking is layered on top.
+**Every draw could be your last.**
 
-**Built for Godot 4.2+.** It has not been run inside the Godot editor itself
-(no engine binary was available in the environment this was written in) — it
-has only been carefully reviewed line-by-line for correct GDScript 4.x syntax
-and logic. Please open it in Godot and run it as your first step; see
-"If something doesn't run" below for what to check.
+*A fast, chaotic party card game built in Godot — shed your hand, dodge the bombs, and pray the Chamber misses you.*
 
-## How to run
+<p align="center">
+  <video src="chamber-draw-promo-2026.mp4" controls playsinline style="max-width:100%; border-radius:12px;"></video>
+</p>
 
-1. Open Godot 4.2 or later.
-2. "Import" this folder as a project (select the `project.godot` file).
-3. Open `scenes/Main.tscn` and press **F6** (Run Current Scene).
-4. Watch the on-screen log (and the Godot output console) — it simulates a
-   full game between 4 simple AI players and should always terminate with
-   a printed winner, e.g.:
-   ```
-   === GAME OVER — Winner: Player 3 (after 187 turns) ===
-   ```
+---
 
-You can tweak `num_players` (2–7) and `mode` (Shedding Race / Last One
-Standing) on the `Main` node in the Inspector, or directly in `main.gd`.
+## The pitch
 
-## File structure
+Chamber Draw is a multiplayer shedding card game that mashes the flow of **Uno** with the dread of **Exploding Kittens** and the push-your-luck rush of **Russian Roulette** — then turns the heat up with a double draw pile, King-of-the-hill action cards, and a brand-new *Chamber Draw* nobody survives on luck alone.
+
+2–7 players sit around a 3D poker table full-screen on the table. Match colors or numbers, play savage action cards, and decide — game after game — whether to play it safe... or pull from the pile and find out what the Chamber has in store. 10–20 minutes a match. Alliances shift every single turn.
+
+## What makes it special
+
+- **Two hidden draw piles.** Deck A and Deck B both hide bombs, but nobody knows the split. Read the table, dodge the hot pile, and *force your rivals into it*.
+- **The Chamber Draw.** Pull a Bomb and you immediately spin the 6-card Chamber: **Live** (you're gone), **Backfire** (an opponent pays), **Lucky Draw** (bonus card, keep going), or **Blank** (this time, at least). The Chamber reshuffles after every pull — the odds never get comfortable.
+- **A deck packed with malice.** Swap Hands, Peek (reorder the top 3 — secretly), Choose a Deck (steer an opponent into danger), Rotate Decks (burn the table's reads), the rare Draw Ten hand-flooder, Wild Color, and the villainous Wild Sabotage.
+- **Props, not placeholder UI.** A real 3D poker table with per-seat characters, hand-some animated card flights (deal, draw, discard), a live discard pile that shows the actual top card, procedural night sky, Kenney UI art, and a 30-second turn timer ring tinted to the current player's color.
+- **Full table manners.** Uno-style Jump-In responses, stackable +N draw cards (any value, any color — red +4 on green +2), cross-color Skip/Reverse matching, and a physical turn-order ring so nobody argues who's next.
+- **Nobody gets left behind.** This is why games happen again. Stay in it: Extra Life cards bank up to 2 spare lives; respawn cards can drag the last eliminated player back into the fight; and eliminated players become **spectators** watching the table (Uno-privacy — hands stay hidden).
+
+## How it works
+
+The rules are simple enough for a party, deep enough for a grudge.
+
+1. **Get dealt in.** Everyone gets 7 cards from the two decks (the deal is animated — card-backs fly from the deck to every seat).
+2. **Play a card** that matches the pile's color *or* number, or sling an action/wild card and make the table groan.
+3. **Can't — or shouldn't — play? Draw.** And *from which pile?* That's the whole game. This is your choice, and it's the only one with a bomb in it.
+4. **Boom?** The Bomb hits the Chamber. Resolve it and keep playing — alive, stacked, or... not.
+5. **Dump your hand.** First player to shed every card wins. In **Last One Standing**, be the last player at the table.
+
+Forced draws (Draw Two/Four/Ten) are **Bomb-proof** — they only pull safe cards, so you can weaponize them without self-sabotaging. Voluntary draws carry the full risk. Balance lever, engineered in.
+
+### The lineup
+
+| Card | What it does |
+|---|---|
+| **Numbers 0–9** (Red, Green, Orange, Purple) | Match color or number. |
+| **Skip / Reverse** | Steal a turn / flip the order (matches ANY color of the same action). |
+| **Draw Two / Draw Four / Draw Ten** | The next player draws 2, 4, or a brutal 10 — and **stacks**: answer with any +N of your own. |
+| **Swap Hands** | Trade your whole hand with an opponent. |
+| **Peek** | Secretly view the top 3 of a pile — reorder them to your liking. |
+| **Choose a Deck** | Force an opponent's next draw onto the pile *you* want them on. |
+| **Rotate Decks** | Shuffle both piles back into two fresh ones — erases every hot-pile read. |
+| **Extra Life** | Bank a spare life (up to 2). Consumed automatically when you'd die. |
+| **Wild Color / Wild Sabotage** | Pick the color — Sabotage also names the *next player to draw*. |
+| **Bomb / Diffuse** | Bomb triggers the Chamber. Diffuse cancels it — and has one use. |
+
+## Modes
+
+- **Shedding Race** *(default)* — first to empty their hand wins. A Live Chamber result hits you with 4 penalty cards and a skipped turn instead of knocking you out. Fast and party-friendly.
+- **Last One Standing** — a Live Chamber result eliminates you. Keep playing until only one player remains. Higher tension, sharpened knives.
+
+## Play it anywhere
+
+- **Offline vs. AI** — brave the Chamber against a table of bots. A full **guided tutorial** walks you through every mechanic before you touch a real match.
+- **Online (host-authoritative)** — lobby up with friends via **Epic Online Services P2P** and play over the internet. The host holds the truth and every client gets a private hand snapshot — hiding hands is built into the protocol. Snap, reconnect-safe, 2–7 players.
+
+### Controls
+
+| Input | Action |
+|---|---|
+| **Click a card** | Play it (stackable Draw cards highlight when you're on the hook). |
+| **Click a deck** | Draw from that pile. |
+| **1–9 / 0** | Play hand card by index · stack a Draw card when targeted. |
+| **A / B** | Draw from Deck A / Deck B · pick a forced-draw pile. |
+| **Esc / ❚❚** | Pause (offline). |
+
+## Run it
+
+Fully built out — you can even skip setup:
+
+- **Prebuilt binaries:** `builds/` contains the Windows executable and a **Chamber Draw Installer.exe**.
+- **From source** — requires **Godot 4.7+**:
+  1. Open this folder in the Godot editor (import `project.godot`).
+  2. Run `scenes/menu.tscn` (the main scene).
+  3. Hit **Play vs AI**, run the **Tutorial**, or create an online lobby.
+
+> **Online note:** EOS login needs a `devtool_credential_name` in `eos_config.local.json`, or set `login.method` to `"anonymous"` to hop right in.
+
+## Quality under the hood
+
+- **140 tests · 10 suites · deterministic.** The rule engine (`game_state.gd`) and deck/chamber systems are unit-tested and flake-proof (randomness is pinned in test fixtures), so the math you play is the math that shipped.
+- **Host-authoritative by design.** The single source of truth on the host; clients send intents, receive snapshots.
+- **Balance levers, not hacks.** Every card count, bomb count, chamber-odds knob, and pile split is a named constant at the top of `card_database.gd`. Tune the lethality without touching logic.
+- Headless parse-clean, editor errors list zeroed.
+
+## Project map
 
 ```
-chamber_draw_godot/
-├── project.godot
-├── icon.svg
-├── scenes/
-│   └── Main.tscn          # test harness scene (Control + log label)
-└── scripts/
-    ├── card.gd            # Card resource: type/color/number/action_id
-    ├── card_database.gd   # builds the full tunable card pool
-    ├── chamber_deck.gd    # the 6-card Chamber mini-deck (Live/Blank/etc.)
-    ├── deck_manager.gd    # the two-pile Multi-Deck System + rotation
-    ├── player_data.gd     # hand, banked Extra Lives, eliminated flag
-    ├── game_state.gd      # the core rules engine — turns, play, draw, win
-    └── main.gd            # AI-driven simulation harness (no UI/art yet)
+scenes/game_3d.tscn   The 3D poker table world (decks, discard, seats)
+scenes/player_ui.tscn The 2D hand layer
+scenes/game.tscn      Entry scene (menu/lobby/game)
+scripts/game.gd       Game screen, HUD, input, host/relay logic
+scripts/game_state.gd Authoritative rules engine (turn order, chamber, wins)
+scripts/deck_manager.gd  Two-pile Multi-Deck System + chamber deck
+scripts/card_database.gd The full tunable card pool
+scripts/eos_manager.gd   EOS login, lobbies, P2P relay, roster mapping
+tests/test_*.gd       140 deterministic tests across 10 suites
 ```
 
-## What's implemented
+For the full design intent — balance levers, tuning curves, art direction, accessibility choices — see **[Chamber_Draw_Game_Design_Doc.md](Chamber_Draw_Game_Design_Doc.md)**.
 
-- Full card pool: numbers, Skip/Reverse/Draw Two/Draw Four/Draw Ten,
-  Swap Hands, Peek, Extra Life, Choose a Deck, Rotate Decks, Wild Color,
-  Wild Sabotage, Bombs, and Diffuses — all counts are named constants at the
-  top of `card_database.gd` so balance tuning never requires touching logic.
-- The Multi-Deck System: two draw piles, player choice of which to draw
-  from, Choose a Deck forcing an opponent's next pull, Rotate Decks
-  reshuffling/redealing both piles.
-- The Chamber Draw: reshuffles after every use, auto-Diffuse cancellation
-  when a player is holding one, and all four possible outcomes (Live,
-  Blank, Backfire, Lucky Draw).
-- Both win modes: Shedding Race (Live = penalty + skipped turn, race to
-  empty hand) and Last One Standing (Live = elimination unless a banked
-  Extra Life absorbs it).
-- Forced draws (Draw Two/Four/Ten) are immune to triggering the Bomb, per
-  the design note in the GDD — a Bomb pulled during a forced draw is
-  reshuffled back in and redrawn instead.
+---
 
-## What's intentionally NOT implemented yet (next steps)
-
-- **Any real UI or art.** This is pure logic + a debug text log.
-- **Human input.** The harness only drives dumb AI (first valid card, else
-  draw from the fuller pile) so the rules engine can be validated in
-  isolation. A real player-facing scene will need to call the same
-  `GameState` methods (`play_card`, `draw_card`, `get_valid_plays`) in
-  response to UI clicks instead of the AI's automatic choices in `main.gd`.
-- **Peek's reorder step.** `deck_manager.gd` has `reorder_top()` ready to
-  wire up, but the AI harness doesn't use it (it just peeks and moves on).
-- **Off-turn Extra Life play.** The GDD allows playing Extra Life "at any
-  time, even off-turn"; this prototype simplifies it to a normal on-turn
-  action for now. Supporting true off-turn interrupts needs a small event/
-  reaction window added to the turn structure — worth doing once real
-  networking is in place, since interrupts are also a networking sync
-  concern.
-- **Epic Online Services networking.** This prototype is entirely local/
-  synchronous. The plan is to keep `GameState` as the single source of
-  truth run by the host, and have clients send intents (`play_card`,
-  `draw_card` calls) via RPC for the host to validate and apply — this
-  file structure was written with that host-authoritative split in mind.
-
-## If something doesn't run
-
-Since this hasn't been test-run in the actual editor yet, if you hit an
-error on first run, the most likely spots (in rough order of likelihood) are:
-- A typo in a `match` case string (e.g. `"draw_two"` vs `"draw_two "`) —
-  these are matched against `action_id` strings set in `card_database.gd`.
-- Godot version mismatch — this targets 4.2+ syntax (`@export`, `@onready`,
-  typed arrays like `Array[Card]`). Godot 3.x will not run this as-is.
-- `scenes/Main.tscn`'s `ext_resource` path — should be fine as long as the
-  folder structure above is preserved.
-
-Feel free to paste back any error message from the Godot console and I'll
-fix it directly.
+*Playing card art pending an asset upgrade — the current cards are rendered procedurally, so every build looks clean and consistent.*
