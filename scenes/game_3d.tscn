@@ -1,0 +1,53 @@
+[gd_scene format=3 uid="uid://ox4qigde60gv"]
+
+[ext_resource type="PackedScene" uid="uid://c1voajrdp5507" path="res://assets/imported_assets/Poker Set/Models/PokerTable/SM_Poker Table.fbx" id="1_icp8q"]
+
+[node name="Game3d" type="Node3D" unique_id=1222493729]
+
+[node name="SM_Poker Table" parent="." unique_id=1019298911 instance=ExtResource("1_icp8q")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.081356525, 0, 1.1052237)
+
+[node name="Table top" type="Marker3D" parent="." unique_id=1023379712]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7031598, 0)
+
+[node name="Deck A" type="Marker3D" parent="." unique_id=1920720038]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.20589235, 0.7031598, -0.2455613)
+
+[node name="Deck B" type="Marker3D" parent="." unique_id=1110805673]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.31922176, 0.7031598, 0.29130965)
+
+[node name="Player1" type="Marker3D" parent="." unique_id=477945373]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0015981197, 0.7960253, 0.6115066)
+
+[node name="XRCamera3D" type="XRCamera3D" parent="Player1" unique_id=1727277070]
+transform = Transform3D(1, 0, 0, 0, 0.8915544, 0.45291358, 0, -0.45291358, 0.8915544, 0, 0.3259232, 0.08520663)
+
+[node name="Player2" type="Marker3D" parent="." unique_id=1475270000]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0015981197, 0.7960253, -0.68700147)
+
+[node name="XRCamera3D" type="XRCamera3D" parent="Player2" unique_id=1775140820]
+transform = Transform3D(-0.99987763, 0.007084752, -0.013946256, -7.173308e-09, 0.8915544, 0.45291364, 0.015642626, 0.45285818, -0.8914454, 0, 0.3259232, -0.030292034)
+
+[node name="Player3" type="Marker3D" parent="." unique_id=2123299365]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6052907, 0.7960253, 0.007814288)
+
+[node name="XRCamera3D2" type="XRCamera3D" parent="Player3" unique_id=1826621471]
+transform = Transform3D(-0.01247419, -0.45287836, 0.8914851, -6.7086816e-09, 0.8915544, 0.4529136, -0.99992234, 0.005649723, -0.01112142, 0.05408621, 0.3259232, -0.05639419)
+
+[node name="Player4" type="Marker3D" parent="." unique_id=172098809]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7273888, 0.7960253, 0.007814288)
+
+[node name="XRCamera3D2" type="XRCamera3D" parent="Player4" unique_id=1534540982]
+transform = Transform3D(-0.037326038, 0.45211935, -0.891176, 7.2277984e-09, 0.8917974, 0.4524347, 0.99930304, 0.016887601, -0.03328727, 0.05408621, 0.3259232, -0.05639419)
+
+[node name="Player5" type="Marker3D" parent="." unique_id=1648751578]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5963988, 0.7960253, -0.595878)
+
+[node name="XRCamera3D2" type="XRCamera3D" parent="Player5" unique_id=1857008716]
+transform = Transform3D(-0.7117472, 0.3178063, -0.62643045, 9.089147e-09, 0.8917976, 0.4524347, 0.70243573, 0.3220191, -0.63473445, 0.06461078, 0.3259232, 0.08626479)
+
+[node name="Player6" type="Marker3D" parent="." unique_id=1807164775]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.50277716, 0.7960253, 0.5260787)
+
+[node name="XRCamera3D2" type="XRCamera3D" parent="Player6" unique_id=2104396963]
+transform = Transform3D(0.7322929, -0.30810347, 0.6073051, 3.7399452e-08, 0.8917976, 0.4524347, -0.6809899, -0.33131468, 0.653057, -0.036679566, 0.3259232, 0.01109612)

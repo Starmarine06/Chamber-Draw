@@ -1,0 +1,66 @@
+# ------------------------------------------------------------------
+# Chamber Draw — Godot 4.x project
+# Ignores everything that is NOT game code, and every private-key /
+# secret-bearing file, anywhere in the tree.
+# ------------------------------------------------------------------
+
+# ---- Godot engine cache / editor state (never commit) ----
+.godot/
+.import/
+.android/
+
+# ---- Build / export outputs: installers, executables, temp droppings ----
+# These ship as GitHub Release assets (the 104MB chamber_draw.exe also
+# exceeds GitHub's 100MB per-file limit, so it cannot be committed anyway).
+builds/
+out/
+*.exe
+*.tmp
+*.TMP
+*.pck
+*.mtx
+
+# ---- Promo / rendering output ----
+web/promo/out/
+
+# ---- Epic Online Services (EOS) — Epic SDK prebuilt binaries, NOT game code ----
+# The addon's .gd source IS game code (kept). The multi-hundred-MB prebuilt
+# SDK payload for iOS/Linux/macOS/Android/Windows is third-party and
+# re-obtainable from the epic-online-services-godot addon — ignore it
+# anywhere it appears.
+addons/epic-online-services-godot/bin/
+addons/epic-online-services-godot/bin/**
+
+# ---- Secrets / private keys — ignore anywhere, under any name ----
+# The EOS config that holds client_secret / encryption_key / devtool
+# credentials. Never commit, no matter where it lives.
+eos_config.local.json
+eos_config.local.*.json
+*.local.json
+
+# ---- Local editor / OS droppings ----
+.freebuff/
+.idea/
+.vscode/
+*.bak
+*~
+Thumbs.db
+desktop.ini
+
+# ---- Packed delivery archives (game ships as source, not zip payloads) ----
+chamber_draw_godot.zip
+*.zip
+
+# ---- (auto-guard) ----
+*.dll
+*.mp4
+*.mp4~*
+addons/epic-online-services-godot/_eos_sdk_*/
+*.godot/
+build/
+
+# ---- auto-guard (ensured present) ----
+addons/epic-online-services-godot/_eos_sdk_*/bin/
+
+# ---- auto-guard (final) ----
+Chamber Draw Installer.exe

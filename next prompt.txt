@@ -1,0 +1,1 @@
+â€" RED 4 â€" is showing in the welcome text. The card deck for explaining the drawing needs to reset the users hand. After the drawing stacked text comes the tutorial breaks .

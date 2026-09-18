@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://ceq4u72xumbpg"]
+
+[node name="PlayerUI" type="Control" unique_id=555213161]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="CenterCards" type="Marker2D" parent="." unique_id=297114871]
+position = Vector2(568, 568)
