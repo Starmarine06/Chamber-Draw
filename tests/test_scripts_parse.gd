@@ -41,6 +41,8 @@ func test_system_scripts_load() -> void:
 	assert_true(load("res://scripts/noir_background.gd") != null, "noir_background.gd parses")
 	assert_true(load("res://scripts/character_actor.gd") != null, "character_actor.gd parses")
 	assert_true(load("res://scripts/voice_chat.gd") != null, "voice_chat.gd parses")
+	assert_true(load("res://scripts/fx/table_builder.gd") != null, "fx/table_builder.gd parses")
+	assert_true(load("res://shaders/table_felt.gdshader") != null, "table_felt.gdshader compiles")
 	assert_true(load("res://scripts/ui/voice_bar.gd") != null, "ui/voice_bar.gd parses")
 	assert_true(load("res://scripts/fx/juice.gd") != null, "fx/juice.gd parses")
 	assert_true(load("res://scripts/fx/screen_shake.gd") != null, "fx/screen_shake.gd parses")

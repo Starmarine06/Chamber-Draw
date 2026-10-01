@@ -157,15 +157,15 @@ func get_valid_plays(player_index: int) -> Array[int]:
 ## Ring order: bottom → left → top-left → top → right → bottom-right.
 const _RING_6: Array[int] = [0, 3, 4, 1, 2, 5]
 
-## Build the physical turn-order ring for `n` players (2–7).
-## For 7 players, seat 6 wraps onto Player1 (same marker as seat 0),
-## inserted adjacent to seat 0 in the ring.
+## The full 8-seat ring: the 6-seat ring with the two corner seats (6 = top-right,
+## 7 = bottom-left) filled in. Walking order around the table, starting at seat 0.
+const _RING_8: Array[int] = [0, 7, 3, 4, 1, 6, 2, 5]
+
+## Build the physical turn-order ring for `n` players (2-8): the 8-seat ring, keeping the seats
+## that exist. (For up to 6 players this is the same order the old 6-seat ring gave.)
 func _build_turn_order(n: int) -> void:
-	if n >= 7:
-		turn_order = [0, 6, 3, 4, 1, 2, 5]
-		return
 	turn_order = []
-	for s in _RING_6:
+	for s in _RING_8:
 		if s < n:
 			turn_order.append(s)
 

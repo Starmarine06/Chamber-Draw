@@ -31,6 +31,35 @@ const GHOST_SCALE := 0.4
 const GHOST_SPEED := 1.1       # world units per second
 const HOVER := 0.12            # how far off the floor he floats
 
+## Every ghost waiter currently alive. There is only ever ONE serving: a new refill removes
+## any leftover first (and logs it, so a stuck one is obvious in the output).
+static var _ghosts: Array = []
+static var _next_id := 1
+
+
+static func _log(msg: String) -> void:
+	print("[Pour %.2f] %s" % [Time.get_ticks_msec() / 1000.0, msg])
+
+
+static func _purge_ghosts(reason: String) -> void:
+	var alive: Array = []
+	for g in _ghosts:
+		if is_instance_valid(g):
+			alive.append(g)
+	if not alive.is_empty():
+		_log("%s: removing %d leftover ghost(s) %s" % [reason, alive.size(), str(alive.map(func(a: Node) -> Variant: return a.get_meta(&"ghost_id", -1)))])
+	for g in alive:
+		(g as Node).queue_free()
+	_ghosts.clear()
+
+
+## Frees a ghost that was prepared but never got to perform (the refill was cancelled).
+static func dispose(plan: Dictionary) -> void:
+	var a: Node = plan.get("actor", null)
+	if a != null and is_instance_valid(a):
+		_log("dispose ghost #%s (refill cancelled before the pour)" % str(a.get_meta(&"ghost_id", -1)))
+		a.queue_free()
+
 
 static func make_bottle(drink: Dictionary) -> Node3D:
 	var bottle := Node3D.new()
@@ -56,9 +85,12 @@ static func make_bottle(drink: Dictionary) -> Node3D:
 
 
 ## Walks `actor` along world-space points (y is left untouched). Awaitable.
-static func _walk(host: Node, actor: Node3D, points: Array, speed: float) -> void:
+static func _walk(_host: Node, actor: Node3D, points: Array, speed: float) -> void:
+	# Tweens belong to the ACTOR, not the host: the drink session (host) frees itself when
+	# the player is done, and a tween on a freed node never finishes - the ghost would hang.
 	for p: Vector3 in points:
 		if not is_instance_valid(actor):
+			_log("walk aborted: ghost freed")
 			return
 		var from := actor.global_position
 		var to := Vector3(p.x, from.y, p.z)
@@ -66,7 +98,7 @@ static func _walk(host: Node, actor: Node3D, points: Array, speed: float) -> voi
 		if dist < 0.01:
 			continue
 		actor.rotation.y = atan2(to.x - from.x, to.z - from.z)
-		var tw := host.create_tween()
+		var tw := actor.create_tween()
 		tw.tween_property(actor, "global_position", to, dist / speed)
 		await tw.finished
 
@@ -110,7 +142,13 @@ static func prepare(ctx: Dictionary) -> Dictionary:
 		bar_pos = (crowd.bartender as Dictionary).home
 	var borrowed := false
 	var home := Vector3(bar_pos.x, floor_y + HOVER, bar_pos.z)
+	_purge_ghosts("prepare")
 	var actor: Node3D = GhostWaiter.new()
+	actor.set_meta(&"ghost_id", _next_id)
+	_ghosts.append(actor)
+	_log("SPAWN ghost #%d at bar (host=%s glass=%s)" % [_next_id, str(host.name), str(glass.name)])
+	_next_id += 1
+	actor.tree_exited.connect(func() -> void: _log("ghost #%s left the tree" % str(actor.get_meta(&"ghost_id", -1))))
 	world.add_child(actor)
 	actor.scale = Vector3.ONE * GHOST_SCALE
 	actor.global_position = home
@@ -133,8 +171,15 @@ static func prepare(ctx: Dictionary) -> Dictionary:
 	# Along the rim, to the right of the seat (from the seated player's view).
 	var seat_ang := atan2(seat_pos.x - center.x, seat_pos.z - center.z)
 	var ang := seat_ang + 0.5
-	var rad := Vector3(sin(ang), 0.0, cos(ang))           # centre -> outside
 	var r_sh := table_r + 0.2
+	var rest: Variant = ctx.get("rest_spot", null)
+	if rest is Vector3:
+		# The glass already stands on its coaster beyond the rail: pour right there and put the
+		# shoulder just far enough behind it for the arm to reach over the glass.
+		var rs: Vector3 = rest
+		ang = atan2(rs.x - center.x, rs.z - center.z)
+		r_sh = Vector2(rs.x - center.x, rs.z - center.z).length() + h + 0.335 * bottle_s
+	var rad := Vector3(sin(ang), 0.0, cos(ang))           # centre -> outside
 	var shoulder := Vector3(center.x, sh_y, center.z) + rad * r_sh
 	var glass_xz := Vector3(center.x, 0.0, center.z) + rad * (r_sh - h - 0.335 * bottle_s)
 	var pour_spot := Vector3(glass_xz.x, table_y, glass_xz.z)
@@ -181,15 +226,19 @@ static func perform(ctx: Dictionary, plan: Dictionary) -> void:
 	var shoulder: Vector3 = plan.shoulder
 	var rad: Vector3 = plan.rad
 
+	var gid: int = int(actor.get_meta(&"ghost_id", -1))
+	_log("ghost #%d: walking to the table" % gid)
 	actor.call("fade_to", 1.0, 0.8)
 	await _walk(host, actor, path, plan.speed)
 	if not is_instance_valid(actor) or not is_instance_valid(glass):
+		_log("ghost #%d: glass/ghost gone before pouring (actor=%s glass=%s)" % [gid, str(is_instance_valid(actor)), str(is_instance_valid(glass))])
 		_finish(crowd, actor, plan.borrowed, home, plan.home_yaw)
 		return
-	var turn := host.create_tween()
+	var turn := actor.create_tween()
 	turn.tween_property(actor, "rotation:y", plan.yaw, 0.3)
 	await turn.finished
-	await host.get_tree().create_timer(0.2).timeout
+	await actor.get_tree().create_timer(0.2).timeout
+	_log("ghost #%d: pouring (host alive=%s)" % [gid, str(is_instance_valid(host))])
 	var ap: AnimationPlayer = null
 
 	# Bottle in his hand.
@@ -222,7 +271,12 @@ static func perform(ctx: Dictionary, plan: Dictionary) -> void:
 	stream.global_position = (neck_tip + glass_top) * 0.5
 	stream.scale = Vector3(1.0, maxf(neck_tip.distance_to(glass_top), 0.001), 1.0)
 
-	var tw := host.create_tween()
+	var tw := actor.create_tween()
+	actor.tree_exiting.connect(func() -> void:
+		if is_instance_valid(bottle):
+			bottle.queue_free()
+		if is_instance_valid(stream):
+			stream.queue_free())
 	tw.tween_method(apply, 0.0, 1.0, Juice.d(0.9)).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tw.tween_callback(func() -> void:
 		stream.visible = true
@@ -239,6 +293,7 @@ static func perform(ctx: Dictionary, plan: Dictionary) -> void:
 		bottle.queue_free()
 	if is_instance_valid(stream):
 		stream.queue_free()
+	_log("ghost #%d: pour finished (host alive=%s)" % [gid, str(is_instance_valid(host))])
 	if ctx.has("poured") and (ctx.poured as Callable).is_valid():
 		(ctx.poured as Callable).call()
 
@@ -247,12 +302,14 @@ static func perform(ctx: Dictionary, plan: Dictionary) -> void:
 		var back: Array = path.duplicate()
 		back.reverse()
 		back.append(Vector3(home.x, feet_y, home.z))
+		_log("ghost #%d: walking back to the bar" % gid)
 		await _walk(host, actor, back, plan.speed)
 	_finish(crowd, actor, plan.borrowed, home, plan.home_yaw)
 
 
 static func _finish(_crowd: Node, actor: Node3D, _borrowed: bool, _home: Vector3, _home_yaw: float) -> void:
 	if actor != null and is_instance_valid(actor):
+		_log("ghost #%s: fading out and leaving" % str(actor.get_meta(&"ghost_id", -1)))
 		var tw := actor.create_tween()
 		tw.tween_method(func(a: float) -> void: actor.call("set_alpha", a), 1.0, 0.0, 0.6)
 		tw.tween_callback(actor.queue_free)

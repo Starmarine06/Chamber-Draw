@@ -37,12 +37,9 @@ enum Phase { INTRO, READY, SIPPING, BUSY, OUTRO, DONE }
 var phase: Phase = Phase.INTRO
 ## W while the bartender is pouring: you let go and get your cards back; the pour finishes on its own.
 var on_walk_away: Callable
-## Called (awaited) when the pour ends after a walk-away: the game puts the cards back down.
-var on_resume: Callable
 var _refilling := false      # a refill (bartender pour) is under way
 var _pouring := false        # the glass is on the table and the bartender is pouring
-var _walked_away := false
-var _walk_pending := false   # asked to walk away before the glass reached the table
+var _walked_away := false    # drinking mode ended mid-refill: the pour carries on, nothing else
 var drink: Dictionary = {}
 var sip_per_tick := BASE_SIP_PER_TICK
 var abv := 1.0
@@ -198,6 +195,8 @@ func _apply_level() -> void:
 
 ## One scroll tick = one sip.
 func sip() -> void:
+	if _walked_away:
+		return
 	if phase == Phase.READY:
 		if level <= 0.02:
 			_refill()
@@ -235,20 +234,17 @@ func finish() -> void:
 ## the pour; otherwise it just asks for the glass to be set down.
 func request_walk_away() -> void:
 	if _refilling and not _walked_away:
-		if _pouring:
-			_walk_away()
-		else:
-			_walk_pending = true
+		_walked_away = true
+		if _pouring and _hand != null:
+			_hand.visible = false   # (before the pour the hand is still carrying the glass down)
+		if on_walk_away.is_valid():
+			on_walk_away.call()
 	else:
 		finish()
 
-func _walk_away() -> void:
-	_walked_away = true
-	_walk_pending = false
-	if _hand != null:
-		_hand.visible = false
-	if on_walk_away.is_valid():
-		on_walk_away.call()
+## True once drinking mode was ended mid-refill (the scroll wheel and cards are yours again).
+func is_walked_away() -> bool:
+	return _walked_away
 
 func abort() -> void:
 	_set_down(true)
@@ -268,11 +264,12 @@ func _process(delta: float) -> void:
 func _enter_ready() -> void:
 	phase = Phase.READY
 	_idle = 0.0
-	if level <= 0.02 and not _finish_requested:
+	if level <= 0.02 and (not _finish_requested or _walked_away):
 		_refill()
 
 func _lower() -> void:
 	phase = Phase.BUSY
+	_refilling = level <= 0.02   # an empty glass goes straight into the refill
 	var tw := create_tween()
 	tw.tween_property(_hand, "position", _rest, Juice.d(0.35)).set_trans(Tween.TRANS_SINE)
 	tw.parallel().tween_property(_hand, "rotation_degrees", REST_ROT, Juice.d(0.35))
@@ -311,6 +308,7 @@ func _reclaim_hand() -> void:
 
 
 func _exit_tree() -> void:
+	print("[Pour %.2f] session: left the tree (refilling=%s pouring=%s)" % [Time.get_ticks_msec() / 1000.0, str(_refilling), str(_pouring)])
 	_drop_waiter()
 
 
@@ -320,6 +318,7 @@ func _exit_tree() -> void:
 func _refill() -> void:
 	phase = Phase.BUSY
 	_refilling = true
+	print("[Pour %.2f] session: refill starts (walked_away=%s)" % [Time.get_ticks_msec() / 1000.0, str(_walked_away)])
 	if net_cb.is_valid():
 		net_cb.call("pour", {"level": level})
 
@@ -329,7 +328,7 @@ func _refill() -> void:
 	var ctx := {
 		"host": self, "world": cam.get_parent(), "glass": _glass, "center": table_center,
 		"seat_pos": seat_pos, "floor_y": floor_y, "crowd": crowd, "drink": drink,
-		"table_y": table_spot.y, "table_r": table_radius,
+		"table_y": table_spot.y, "table_r": table_radius, "rest_spot": table_spot,
 		"level_from": level,
 		"level_cb": func(v: float) -> void:
 			level = v
@@ -339,7 +338,10 @@ func _refill() -> void:
 	var plan: Dictionary = await BartenderPour.prepare(ctx)
 	if plan.is_empty() or not is_instance_valid(_glass):
 		_refilling = false
-		_pick_glass_back_up()
+		if _walked_away:
+			_set_down(true)
+		else:
+			_pick_glass_back_up()
 		return
 	var spot: Vector3 = plan.pour_spot
 	var reach_rot := Vector3(-10.0, -18.0, 10.0)
@@ -354,28 +356,23 @@ func _refill() -> void:
 	down.tween_property(_hand, "position", _off, Juice.d(0.4)).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
 	await down.finished
 	if not is_instance_valid(_glass):
+		BartenderPour.dispose(plan)
 		return
 
 	# 2) The bartender pours it.
 	ctx["glass"] = _glass
+	print("[Pour %.2f] session: handing the pour to the ghost" % (Time.get_ticks_msec() / 1000.0))
 	BartenderPour.perform(ctx, plan)   # (coroutine: keeps running after we move on)
 	_pouring = true
-	if _walk_pending:
-		_walk_away()
+	if _walked_away and _hand != null:
+		_hand.visible = false
 	while not done[0] and is_inside_tree():
 		await get_tree().process_frame
 	_pouring = false
 	_refilling = false
 	if _walked_away:
-		_walked_away = false
-		if _finish_requested:
-			_set_down(true)   # they asked to put it away meanwhile: the full glass stays on the table
-			return
-		# Pour over: cards go back down and the glass is in your hand again.
-		if on_resume.is_valid():
-			await on_resume.call()
-		if _hand != null:
-			_hand.visible = true
+		_set_down(true)   # drinking mode already ended: the full glass just stays on the table
+		return
 	_pick_glass_back_up()
 
 
@@ -444,6 +441,7 @@ func _place_glass_on_table(at: Variant = null) -> void:
 	_glass.global_transform = Transform3D(Basis().scaled(Vector3.ONE * s), where)
 
 func _finish() -> void:
+	print("[Pour %.2f] session: finished (refilling=%s pouring=%s) - session node is freed now" % [Time.get_ticks_msec() / 1000.0, str(_refilling), str(_pouring)])
 	VFP._release_head(cam)
 	phase = Phase.DONE
 	var cb := on_done

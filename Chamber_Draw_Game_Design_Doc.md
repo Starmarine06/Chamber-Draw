@@ -3,7 +3,7 @@
 **Working Title:** Chamber Draw
 **Genre:** Multiplayer party card game
 **Engine:** Godot 4.x
-**Players:** 2–7 (recommended sweet spot: 4–6)
+**Players:** 2–8 (recommended sweet spot: 4–6)
 **Platform:** PC / Mobile (cross-platform via Godot export)
 **Networking:** Epic Online Services (EOS) for lobbies/matchmaking, ENet or WebRTC for gameplay sync
 **Session Length:** 10–20 minutes per match
@@ -40,7 +40,7 @@ Players should feel:
 
 ## 4. The Deck
 
-Total deck size scales with player count: **Base deck = 80 cards + 1 Bomb per 4 players (min 1, max 3, for the 2–7 player range)**.
+Total deck size scales with player count: **Base deck = 80 cards + 1 Bomb per 4 players (min 1, max 3, for the 2–8 player range)**.
 
 ### 4.1 Number Cards (56 cards)
 Four colors (Red, Blue, Green, Yellow), numbers 0–9. Two of each number/color except 0 (one of each).
@@ -142,7 +142,7 @@ Match settings screen lets the host pick the mode before starting.
 | # of Diffuse cards | More diffuses = more player agency, less pure luck |
 | Chamber Deck odds (Live/Blank/etc.) | Adjusts lethality curve |
 | Forced-draw Bomb immunity | Determines whether action-card chains can "gift" danger to others |
-| Player count scaling | Bomb count scales with lobby size (2–7) to keep odds consistent per player |
+| Player count scaling | Bomb count scales with lobby size (2–8) to keep odds consistent per player |
 | Draw Four / Draw Ten copy count | Controls how often hands get flooded; Draw Ten intentionally kept to 1 copy to stay a rare swing card |
 | Extra Life max banked count | Caps how "safe" a player can make themselves; 2 is the recommended ceiling |
 | Bomb/Diffuse split between Deck A & B | Can be even (neutral) or skewed each match for variety; Rotate Decks resets any skew |
