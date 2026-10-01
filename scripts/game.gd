@@ -2,6 +2,7 @@ extends Control
 const UIStyle := preload("res://scripts/ui_style.gd")
 const Sound := preload("res://scripts/sound.gd")
 const RoomBuilder := preload("res://scripts/fx/room_builder.gd")
+const TableBuilder := preload("res://scripts/fx/table_builder.gd")
 const RoomCrowd := preload("res://scripts/fx/room_crowd.gd")
 const FirstPersonLine := preload("res://scripts/fx/first_person_line.gd")
 const VicePicker := preload("res://scripts/ui/vice_picker.gd")
@@ -92,8 +93,8 @@ const JUMP_WINDOW_TIME := 4.0
 var _paused := false
 var _room_floor_y := 0.0
 # Secret [C] joke: the waiter's tray. Afterwards you are "wired" for a while.
-const TABLE_GROW := 1.3
-const SEAT_PUSH := 1.5
+const TABLE_GROW := 1.45
+const SEAT_PUSH := 1.62
 # ── Mouse look (cursor hidden; the camera is the player's head) ──
 const LOOK_YAW_MAX := 70.0
 const LOOK_PITCH_UP := 30.0
@@ -143,6 +144,11 @@ var _seat_glass: Dictionary = {}
 var _seat_drink_prod: Dictionary = {}     # seat -> catalogue drink product (glass type / colour)
 var _seat_smoke_prod: Dictionary = {}     # seat -> catalogue smoke product
 var _table_radius := 1.0
+var _tb_built := false         # the procedural table (with its coaster / ashtray shelves) exists
+var _tb_centre := Vector3.ZERO
+var _tb_radius := 1.0
+var _tb_surface := 0.0
+var _tb_off := 0.24            # radians each coaster / ashtray shelf sits from its seat
 var _crowd: Node = null                   # RoomCrowd (the bartender lives here)
 var _seat_ashtray: Dictionary = {}
 var _smoke_btn: Button = null
@@ -661,7 +667,8 @@ func _setup_3d_viewport() -> void:
 		_marker_deck_b = _world_root_3d.get_node_or_null("Deck B") as Marker3D
 		_marker_discard = _world_root_3d.get_node_or_null("Table top") as Marker3D
 		_marker_players.clear()
-		for i in range(1, 7):
+		_ensure_corner_seats()
+		for i in range(1, 9):
 			var m := _world_root_3d.get_node_or_null("Player%d" % i) as Marker3D
 			if m:
 				_marker_players.append(m)
@@ -827,12 +834,20 @@ func _dress_table() -> void:
 	var mesh := _world_root_3d.find_child("PokerTable", true, false) as MeshInstance3D
 	if mesh == null:
 		return
-	var mat := ShaderMaterial.new()
-	mat.shader = preload("res://shaders/poker_table.gdshader")
-	var aabb := mesh.get_aabb()
-	mat.set_shader_parameter("half_width", maxf(aabb.size.x, aabb.size.z) * 0.5)
-	mat.set_shader_parameter("top_y", aabb.position.y + aabb.size.y * 0.86)
-	mesh.material_override = mat
+	# The imported model stays in the scene (hidden) so its bounds still size the room; what you
+	# see is the procedural table, built on the same radius / felt height / floor.
+	var world_bb: AABB = mesh.global_transform * mesh.get_aabb()
+	var surface_y: float = _marker_discard.global_position.y if _marker_discard != null else world_bb.position.y + world_bb.size.y * 0.86
+	mesh.visible = false
+	_tb_centre = world_bb.get_center()
+	_tb_radius = maxf(world_bb.size.x, world_bb.size.z) * 0.5
+	_tb_surface = surface_y
+	var seat_ps: Array = []
+	for s in range(_seat_count()):          # shelves only for seats somebody actually sits in
+		seat_ps.append(_seat_marker_pos(s))
+	_tb_off = TableBuilder.tab_offset(_tb_centre, seat_ps)
+	TableBuilder.build(_world_root_3d, _tb_centre, _tb_radius, surface_y, world_bb.position.y, seat_ps)
+	_tb_built = true
 
 ## Native pixel size for the 3D render (the real window, not the UI design
 ## size). Falls back to the canvas size when there's no window (headless).
@@ -981,6 +996,42 @@ func _set_pile_thickness(mesh: MeshInstance3D, count: int) -> void:
 		top.position = Vector3(0, t * 0.5 + 0.001, 0)
 	mesh.visible = count > 0
 
+## The authored table has six seats. Seats 7 and 8 (top-right, bottom-left) complete the
+## octagon so up to eight players each get their own place and camera: built here from the
+## existing ones (same radius as the other corner seats, same camera rig turned to face in).
+func _ensure_corner_seats() -> void:
+	if _world_root_3d == null or _world_root_3d.get_node_or_null("Player7") != null:
+		return
+	var seats: Array[Marker3D] = []
+	for i in range(1, 7):
+		var s := _world_root_3d.get_node_or_null("Player%d" % i) as Marker3D
+		if s == null:
+			return
+		seats.append(s)
+	var cx := 0.0
+	var cz := 0.0
+	for s in seats:
+		cx += s.position.x / 6.0
+		cz += s.position.z / 6.0
+	# The two authored corner seats (Player5, Player6) set the corner radius.
+	var r := (Vector2(seats[4].position.x - cx, seats[4].position.z - cz).length() + Vector2(seats[5].position.x - cx, seats[5].position.z - cz).length()) * 0.5
+	var cam_src: Camera3D = null
+	for c in seats[0].get_children():
+		if c is Camera3D:
+			cam_src = c as Camera3D
+			break
+	for spec in [[7, 135.0], [8, 315.0]]:   # degrees, same convention as the other seats (0 = Player1's side)
+		var th := deg_to_rad(float(spec[1]))
+		var m := Marker3D.new()
+		m.name = "Player%d" % int(spec[0])
+		_world_root_3d.add_child(m)
+		m.position = Vector3(cx + sin(th) * r, seats[0].position.y, cz + cos(th) * r)
+		if cam_src != null:
+			var cam := cam_src.duplicate() as Camera3D
+			m.add_child(cam)
+			var yaw := Basis(Vector3.UP, th)
+			cam.transform = Transform3D(yaw * cam_src.transform.basis, yaw * cam_src.transform.origin)
+
 ## Depth-first search for ALL Camera3D nodes in the scene and store them by player.
 ## Cameras are expected as children of PlayerN markers (Player1 = index 0, etc.).
 func _find_all_cameras(root: Node) -> void:
@@ -995,7 +1046,7 @@ func _find_all_cameras(root: Node) -> void:
 				var suffix := parent.name.substr(6)  # "Player" = 6 chars
 				if suffix.is_valid_int():
 					player_idx = suffix.to_int() - 1  # 1-indexed to 0-indexed
-			if player_idx >= 0 and player_idx < 7:  # Support up to 7 players
+			if player_idx >= 0 and player_idx < 8:  # Support up to 8 players
 				# Ensure array is large enough
 				while _player_cameras.size() <= player_idx:
 					_player_cameras.append(null)
@@ -1010,12 +1061,20 @@ func _get_camera_for_seat(seat_index: int) -> Camera3D:
 		return null
 	return _player_cameras[mi]
 
-## Which of the 6 table markers a seat sits at. With fewer than 6 players the seats are
+## Which table marker a seat sits at (6 authored markers + 2 corner seats built at startup).
+## With fewer than 6 players the seats are
 ## spread EVENLY around the table (2 = opposite, 3 = 120 degrees, ...), instead of
 ## bunching up on Player1..N. The walking order around the table is unchanged: seats
 ## follow GameState's ring (0,3,4,1,2,5), and that ring is laid onto evenly spaced slots.
 const SEAT_RING: Array[int] = [0, 3, 4, 1, 2, 5]
 const SEAT_SLOTS := {2: [0, 3], 3: [0, 2, 4], 4: [0, 2, 3, 5], 5: [0, 1, 3, 4, 5], 6: [0, 1, 2, 3, 4, 5]}
+## 7 and 8 players use the full octagon: markers in walking order (seat 0, then round the
+## table), and which of the eight positions each count occupies (7 skips the one opposite seat 0).
+const SEAT_RING_8: Array[int] = [0, 7, 3, 4, 1, 6, 2, 5]
+const SEAT_SLOTS_8 := {
+	2: [0, 4], 3: [0, 3, 5], 4: [0, 2, 4, 6], 5: [0, 2, 3, 5, 6], 6: [0, 1, 3, 4, 5, 7],
+	7: [0, 1, 2, 3, 5, 6, 7], 8: [0, 1, 2, 3, 4, 5, 6, 7],
+}
 
 func _seat_count() -> int:
 	if game != null and game.players.size() > 0:
@@ -1027,8 +1086,16 @@ func _seat_count() -> int:
 
 func _seat_marker_idx(seat: int) -> int:
 	var n := _seat_count()
+	if n >= 2 and n <= 8 and seat < n:
+		var ring8: Array = []
+		for r8 in SEAT_RING_8:
+			if r8 < n:
+				ring8.append(r8)
+		var p8: int = ring8.find(seat)
+		if p8 >= 0:
+			return SEAT_RING_8[int(SEAT_SLOTS_8[n][p8])]
 	if n >= 7 or n < 2 or not SEAT_SLOTS.has(n) or seat >= n:
-		return seat % 6            # 7th player wraps onto Player1 (nudged, see _seat_base_pos)
+		return seat % 6
 	var ring: Array = []
 	for r in SEAT_RING:
 		if r < n:
@@ -1422,20 +1489,60 @@ func _target_screen_pos(seat: int) -> Vector2:
 		return _unproject(marker.global_position + Vector3(0, _char_scale * 1.8, 0))
 	return Vector2(960, 300)
 
-## Projects the deck markers onto screen space and moves the click zones there.
+## Extra world-space margin around a pile's real footprint that still counts as "on the deck".
+const PILE_HIT_PAD := 0.12
+## Smallest comfortable click target, in UI pixels.
+const PILE_HIT_MIN := Vector2(76, 100)
+
+## World-space box around a draw pile: the REAL pile mesh (so it follows what you see, not
+## the editor marker), padded sideways and tall enough to include the top card.
+func _pile_hit_aabb(pile_id: String) -> AABB:
+	var mesh: MeshInstance3D = _pile_a_mesh if pile_id == "A" else _pile_b_mesh
+	var marker: Marker3D = _marker_deck_a if pile_id == "A" else _marker_deck_b
+	var centre := Vector3.ZERO
+	if mesh != null and is_instance_valid(mesh):
+		centre = mesh.global_position
+	elif marker != null:
+		centre = marker.global_position
+	else:
+		return AABB()
+	var w := _card_w3d if _card_w3d > 0.0 else 0.4
+	var half := Vector3(w * 0.5 + PILE_HIT_PAD, 0.1, w * 1.4375 * 0.5 + PILE_HIT_PAD)
+	return AABB(centre - half, half * 2.0)
+
+## The pile's click zone on screen: the projected bounds of its world box, so it grows and
+## shrinks with distance and camera angle. Empty Rect2 when the pile does not exist.
+func _pile_screen_rect(pile_id: String) -> Rect2:
+	var bb := _pile_hit_aabb(pile_id)
+	if bb.size == Vector3.ZERO or _camera_3d == null:
+		return Rect2()
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for i in range(8):
+		var p := _unproject(bb.get_endpoint(i))
+		lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
+		hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
+	var r := Rect2(lo, hi - lo)
+	if r.size.x < PILE_HIT_MIN.x:
+		r = r.grow_individual((PILE_HIT_MIN.x - r.size.x) * 0.5, 0.0, (PILE_HIT_MIN.x - r.size.x) * 0.5, 0.0)
+	if r.size.y < PILE_HIT_MIN.y:
+		r = r.grow_individual(0.0, (PILE_HIT_MIN.y - r.size.y) * 0.5, 0.0, (PILE_HIT_MIN.y - r.size.y) * 0.5)
+	return r.grow(6.0)
+
+## Projects the deck piles onto screen space and moves the click zones there.
 func _reposition_draw_zones() -> void:
 	if not _camera_3d or not _viewport_3d or _viewport_3d.size.x <= 0:
 		return
 	if _draw_btn_a == null or _draw_btn_b == null:
 		return
-	if _marker_deck_a:
-		var pa: Vector2 = _unproject(_marker_deck_a.global_position)
-		_draw_btn_a.position = pa - Vector2(45, 70)
-		_draw_btn_a.size = Vector2(90, 140)
-	if _marker_deck_b:
-		var pb: Vector2 = _unproject(_marker_deck_b.global_position)
-		_draw_btn_b.position = pb - Vector2(45, 70)
-		_draw_btn_b.size = Vector2(90, 140)
+	var ra := _pile_screen_rect("A")
+	if ra.size.x > 0.0:
+		_draw_btn_a.position = ra.position
+		_draw_btn_a.size = ra.size
+	var rb := _pile_screen_rect("B")
+	if rb.size.x > 0.0:
+		_draw_btn_b.position = rb.position
+		_draw_btn_b.size = rb.size
 	for t: Variant in _seat_tags.values():
 		if is_instance_valid(t):
 			_layout_seat_tag(t as Label)
@@ -2967,7 +3074,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if Keybinds.matches(key_event, &"change_vice") and not _paused:
 		var smoking_now := _smoke_session != null and is_instance_valid(_smoke_session)
-		var drinking_now := _drink_session != null and is_instance_valid(_drink_session)
+		var drinking_now := _drinking_active()
 		if smoking_now or drinking_now:
 			_change_vice_choice(&"smoke" if smoking_now else &"drink")
 			return
@@ -3931,6 +4038,10 @@ func _on_diffuse_risk() -> void:
 
 ## Local player asks to smoke or drink: plays first-person here and, online,
 ## is relayed so every other table sees this seat's avatar do it.
+## A glass is in your hand and sipping (false once you ended drinking mode mid-refill).
+func _drinking_active() -> bool:
+	return _drink_session != null and is_instance_valid(_drink_session) and not bool(_drink_session.call("is_walked_away"))
+
 func _request_emote(kind: StringName) -> void:
 	# S while smoking = put the cigarette away.
 	if kind == &"smoke" and _smoke_session != null and is_instance_valid(_smoke_session):
@@ -4014,6 +4125,8 @@ func _play_emote(seat: int, kind: StringName) -> void:
 ## spot for the same seat and sees everyone's glass / ashtray in the right place.
 ## kind: "glass" (right of the seat's cards) | "ashtray" (left) | "pile" (face-down cards)
 func _seat_spot(seat: int, kind: String) -> Vector3:
+	if _tb_built and (kind == "glass" or kind == "ashtray") and not _marker_players.is_empty():
+		return TableBuilder.spot_pos(_tb_centre, _tb_radius, _tb_surface, _seat_marker_pos(seat), kind, _tb_off)
 	var table_y := (_marker_discard.global_position.y if _marker_discard else _table_center.y) + 0.004
 	if _marker_players.is_empty():
 		return Vector3(_table_center.x, table_y, _table_center.z)
@@ -4115,7 +4228,7 @@ func _play_vice_remote(seat: int, event: String, data: Dictionary) -> void:
 					"host": self, "world": _world_root_3d if _world_root_3d else _viewport_3d, "glass": g,
 					"center": _table_center, "seat_pos": _seat_marker_pos(seat), "floor_y": _room_floor_y,
 					"crowd": _crowd, "drink": dp, "level_from": float(data.get("level", 0.0)),
-					"table_y": _seat_spot(seat, "glass").y, "table_r": _table_radius,
+					"table_y": _seat_spot(seat, "glass").y, "table_r": _table_radius, "rest_spot": _seat_spot(seat, "glass"),
 					"level_cb": func(v: float) -> void: _set_glass_level(g, v),
 				})
 		"drink_sip":
@@ -4290,25 +4403,14 @@ func _play_own_vice(kind: StringName, cards_already_down: bool = false) -> void:
 					_hands_busy = false
 					if is_tutorial:
 						tutorial_action_done.emit("vice_end", {"kind": kind}))
-			var resume_drink := func() -> void:
-				while overlay != null and overlay.visible and is_inside_tree():
-					await get_tree().process_frame   # let a card decision finish first
-				if not is_inside_tree():
-					return
-				released[0] = false
-				_hands_busy = true
-				if _prop_overlay != null:
-					_prop_overlay.set_active(true)
-				await _set_cards_down(true).finished
 			var dprod: Dictionary = {}
 			if not is_tutorial and not _vice_pick.drink.is_empty():
 				dprod = ViceCatalog.drink_product(str(_vice_pick.drink.cat), int(_vice_pick.drink.brand))
 			_net_vice("drink_begin", {"cat": str(_vice_pick.drink.get("cat", "whiskey")), "brand": int(_vice_pick.drink.get("brand", 0))})
 			_drink_session = FirstPersonDrink.start(_camera_3d, sleeve, _table_glass,
 				_seat_spot(own_index, "glass"), after_drink, dprod, Callable(self, "_on_sip"), _char_scale, _room_floor_y, _seat_forward(own_index),
-				{"net_cb": Callable(self, "_on_my_drink_event"), "crowd": _crowd, "center": _table_center, "seat_pos": _seat_marker_pos(own_index), "table_r": _table_radius})
+				{"net_cb": Callable(self, "_on_my_drink_event"), "crowd": _crowd, "center": _table_center, "seat_pos": _seat_marker_pos(own_index), "table_r": _table_radius, "rest_spot": _seat_spot(own_index, "glass")})
 			_drink_session.set("on_walk_away", walk_away)
-			_drink_session.set("on_resume", resume_drink)
 			if is_tutorial:
 				tutorial_action_done.emit("vice_start", {"kind": kind})
 			_show_notification("SCROLL to sip  ·  [%s] set it down  ·  [%s] change" % [Keybinds.label(&"drink"), Keybinds.label(&"change_vice")], 4.5))
@@ -4363,7 +4465,7 @@ func _handle_look_input(event: InputEvent) -> bool:
 	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
 		var mb := event as InputEventMouseButton
 		var smoking := _smoke_session != null and is_instance_valid(_smoke_session)
-		var drinking := _drink_session != null and is_instance_valid(_drink_session)
+		var drinking := _drinking_active()
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			if smoking or drinking:
 				return false  # scroll belongs to the cigarette / glass
@@ -4417,16 +4519,36 @@ func _look_deck_target() -> String:
 	if _camera_3d == null:
 		return ""
 	var centre := size * 0.5
+	var cam_pt := centre / _view_scale()
+	var from := _camera_3d.project_ray_origin(cam_pt)
+	var dir := _camera_3d.project_ray_normal(cam_pt)
 	var best := ""
-	var best_d := 96.0
-	for entry in [["A", _marker_deck_a], ["B", _marker_deck_b]]:
-		var m: Marker3D = entry[1]
-		if m == null:
+	var best_d := INF
+	# 1) The crosshair ray actually passes through a pile's box: nearest one wins.
+	for id in ["A", "B"]:
+		var bb := _pile_hit_aabb(id)
+		if bb.size == Vector3.ZERO:
 			continue
-		var d := _unproject(m.global_position).distance_to(centre)
-		if d < best_d:
-			best_d = d
-			best = entry[0]
+		var hit: Variant = bb.intersects_ray(from, dir)
+		if hit != null:
+			var d := from.distance_to(hit as Vector3)
+			if d < best_d:
+				best_d = d
+				best = id
+	if best != "":
+		return best
+	# 2) Close enough: the crosshair is within a generous slack of a pile's click zone.
+	best_d = INF
+	for id in ["A", "B"]:
+		var r := _pile_screen_rect(id)
+		if r.size.x <= 0.0:
+			continue
+		var slacked := r.grow(28.0)
+		if slacked.has_point(centre):
+			var d := r.get_center().distance_to(centre)
+			if d < best_d:
+				best_d = d
+				best = id
 	return best
 
 ## Cursor hidden + captured while looking around, visible whenever UI needs it
@@ -4862,7 +4984,7 @@ func _input(event: InputEvent) -> void:
 	if _paused:
 		return
 	var smoking := _smoke_session != null and is_instance_valid(_smoke_session)
-	var drinking := _drink_session != null and is_instance_valid(_drink_session)
+	var drinking := _drinking_active()
 	var lining := _line_scene != null and is_instance_valid(_line_scene)
 	if not smoking and not drinking and not lining:
 		return

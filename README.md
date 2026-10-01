@@ -14,7 +14,7 @@
 
 Chamber Draw is a multiplayer shedding card game that mashes the flow of **Uno** with the dread of **Exploding Kittens** and the push-your-luck rush of **Russian Roulette** — then turns the heat up with a double draw pile, King-of-the-hill action cards, and a brand-new *Chamber Draw* nobody survives on luck alone.
 
-2–7 players sit around a 3D poker table full-screen on the table. Match colors or numbers, play savage action cards, and decide — game after game — whether to play it safe... or pull from the pile and find out what the Chamber has in store. 10–20 minutes a match. Alliances shift every single turn.
+2–8 players sit around a 3D poker table full-screen on the table. Match colors or numbers, play savage action cards, and decide — game after game — whether to play it safe... or pull from the pile and find out what the Chamber has in store. 10–20 minutes a match. Alliances shift every single turn.
 
 ## What makes it special
 
@@ -63,7 +63,7 @@ Forced draws (Draw Two/Four/Ten) are **Bomb-proof** — they only pull safe card
 ## Play it anywhere
 
 - **Offline vs. AI** — brave the Chamber against a table of bots. A full **guided tutorial** walks you through every mechanic before you touch a real match.
-- **Online (host-authoritative)** — lobby up with friends via **Epic Online Services P2P** and play over the internet, with built-in **voice chat** (Epic lobby RTC room). The host holds the truth and every client gets a private hand snapshot — hiding hands is built into the protocol. Snap, reconnect-safe, 2–7 players.
+- **Online (host-authoritative)** — lobby up with friends via **Epic Online Services P2P** and play over the internet, with built-in **voice chat** (Epic lobby RTC room). The host holds the truth and every client gets a private hand snapshot — hiding hands is built into the protocol. Snap, reconnect-safe, 2–8 players.
 - **Voice note:** voice needs RTC enabled for your EOS deployment on the Epic Dev Portal; if a lobby can't be created with a voice room, it falls back to a normal lobby without voice.
 
 ### Controls

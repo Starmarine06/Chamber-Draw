@@ -45,7 +45,7 @@ const ATTR_COLOR := "COLOR"
 const ATTR_HEARTBEAT := "HB"
 ## Bump whenever RPCs / snapshot format change: mismatched builds silently misroute RPCs
 ## (everything looks broken for the older one), so joining a different version is refused.
-const VERSION := "6"
+const VERSION := "7"
 
 const HOST_PEER_ID := 1
 
@@ -72,7 +72,7 @@ var lobby: HLobby = null
 var join_code := ""
 var last_error := ""
 var lobby_name := ""
-var max_members := 7
+var max_members := 8
 
 ## Current EOSGMultiplayerPeer (untyped: native GDExtension class).
 var peer = null

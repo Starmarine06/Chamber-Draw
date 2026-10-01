@@ -73,7 +73,7 @@ func _build_ui() -> void:
 	pcount_row.add_child(player_count_label)
 
 	var btn_plus := UIStyle.make_button("+", &"secondary", Vector2(50, 42), 22)
-	btn_plus.pressed.connect(func(): num_players = mini(num_players + 1, 6); _refresh())
+	btn_plus.pressed.connect(func(): num_players = mini(num_players + 1, 8); _refresh())
 	pcount_row.add_child(btn_plus)
 
 	# Mode
@@ -112,7 +112,9 @@ func _build_ui() -> void:
 	_menu_swatch_group = ButtonGroup.new()
 	_menu_swatch_group.allow_unpress = false
 	for i in range(GameGlobals.PALETTE.size()):
-		var swatch := UIStyle.make_swatch(GameGlobals.PALETTE[i], GameGlobals.PALETTE_NAMES[i])
+		var swatch := UIStyle.make_swatch(GameGlobals.PALETTE[i], "")   # colour only, no text
+		swatch.tooltip_text = GameGlobals.PALETTE_NAMES[i]
+		swatch.custom_minimum_size = Vector2(40, 40)
 		swatch.button_group = _menu_swatch_group
 		swatch.button_pressed = i == GameGlobals.my_color_idx
 		swatch.pressed.connect(_on_color_picked.bind(i))

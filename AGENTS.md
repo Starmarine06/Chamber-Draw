@@ -758,5 +758,26 @@ esolve_forced_draw (it zeroes the count), then reveal after _check_turn().
   → `docs/`. Removed dead code: game.gd `_show_action_notification/_show_skip_notification/_add_table_label/
   _felt_point_at/_do_screen_shake/_base_camera_transform`, `LOOK_SENS`; card_node `_draw_ellipse/_ellipse_points/STOCK*`;
   first_person_drink `_make_bottle/_spawn_waiter/_finish_pour_now`; tutorial `_t_deck`; `FALLBACK_GLB`.
+- **Procedural table:** `scripts/fx/table_builder.gd` lathes a round table (woven felt via
+  `shaders/table_felt.gdshader` with double brass betting rings, six chamber studs + a drum emblem,
+  brass trim, padded leather rail, brass band, lacquered apron, turned pedestal). `game._dress_table`
+  HIDES the imported FBX (kept in the tree: its bounds still size the room/floor) and builds the new
+  table on the same radius, felt height (= discard marker y) and floor, so markers/seats/decks/cameras
+  are untouched. **Coaster + ashtray shelves:** every seat gets two brass-rimmed round shelves past the
+  rail (`TableBuilder.spot_pos`, +/-`TAB_ANGLE` from the seat: right = felt-lined coaster for the glass,
+  left = ashtray). `game._seat_spot("glass"/"ashtray")` returns those spots (so glasses/ashtrays never
+  stand on the felt) and the bartender pours AT the coaster (`ctx.rest_spot` in `bartender_pour.prepare`).
+  Table grown `TABLE_GROW` 1.45, `SEAT_PUSH` 1.62. Verified by rendering screenshots (headless can't render; use a windowed temp scene).
+- **8 players (max):** the authored table has 6 seats; `game._ensure_corner_seats` builds Player7 (top-right,
+  135 deg) and Player8 (bottom-left, 315 deg) markers + cameras at startup (cloned from Player1's rig) to
+  complete the octagon. 7 and 8 players use the 8-seat ring `[0,7,3,4,1,6,2,5]` (`game_state._RING_8`,
+  `game.SEAT_RING_8` / `SEAT_SLOTS_8`; 7 skips the slot opposite seat 0); <=6 keep the old 6-seat ring/slots.
+  Seating now uses the octagon for EVERY count (`SEAT_SLOTS_8`: 4 players = a square, etc.), and shelf spacing
+  comes from the closest pair of seats (`TableBuilder.tab_offset`) so shelves never touch. Menu colour swatches
+  are colour-only (name in the tooltip), like the lobby's. Menu +, lobby (`EOSManager.max_members`) and the palette (8 unique colors) all allow 8. `EOSManager.VERSION` is "7".
+  Coaster/ash shelves are built only for occupied seats and offset by the seat count (`TableBuilder.spot_pos`).
+- **Ghost waiter** (`fx/ghost_waiter.gd`): smooth scalloped sheet (SurfaceTool bell + head dome), hollow glowing
+  eyes + blink, bow tie, top hat, sleeved/gloved arms with a towel, drifting wisps, cold glow light. `SHOULDER`
+  is (0.72, 1.7, 0) and `ARM_LEN` 0.85 (the pour code reads both).
 - Tests added: 4 pass-out tests in `test_game_state.gd`, parse gate for voice scripts (editor run still needed;
   the logic was verified headless with a throwaway scene).
