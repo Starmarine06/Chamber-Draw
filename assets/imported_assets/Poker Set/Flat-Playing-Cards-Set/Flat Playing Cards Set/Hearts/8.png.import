@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://olg1shqe1nys"
 path.s3tc="res://.godot/imported/8.png-1ae33aa9b9d5de3cf043739feab74057.s3tc.ctex"
+path.etc2="res://.godot/imported/8.png-1ae33aa9b9d5de3cf043739feab74057.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/imported_assets/Poker Set/Flat-Playing-Cards-Set/Flat Playing Cards Set/Hearts/8.png"
-dest_files=["res://.godot/imported/8.png-1ae33aa9b9d5de3cf043739feab74057.s3tc.ctex"]
+dest_files=["res://.godot/imported/8.png-1ae33aa9b9d5de3cf043739feab74057.s3tc.ctex", "res://.godot/imported/8.png-1ae33aa9b9d5de3cf043739feab74057.etc2.ctex"]
 
 [params]
 

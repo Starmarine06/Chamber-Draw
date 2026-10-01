@@ -16,6 +16,10 @@ signal jump_in_available(candidates: Array)
 
 ## Emitted when a player respawns from a Respawn card.
 signal player_respawned(player_index: int)
+## A player drank too much: they sleep through their next turn.
+signal player_passed_out(player_index: int)
+## The sleeper's turn came round and was skipped: they wake up holding penalty cards.
+signal player_woke_up(player_index: int, penalty_cards: int)
 
 ## Emitted when all bombs are diffused and voting begins.
 signal bomb_vote_started()
@@ -80,6 +84,7 @@ var bomb_votes: Dictionary = {}  # player_index -> true/false (true = continue)
 var total_bombs_diffused: int = 0  # track how many bombs have been diffused
 
 const STARTING_HAND_SIZE = 7
+const PASS_OUT_PENALTY = 3          # extra cards a sleeper wakes up with
 const PENALTY_HAND_SIZE_MODE_A = 4
 const RESPAWN_HAND_SIZE = 4
 const BOMBS_PER_PLAYER = 2
@@ -205,11 +210,41 @@ func advance_turn() -> void:
 	if players[current_index].skip_next_turn and not (pending_forced_draw_count > 0 and pending_forced_draw_player_index == current_index):
 		players[current_index].skip_next_turn = false
 		_emit_log("%s is skipped." % players[current_index].display_name)
+		_wake_if_passed_out(current_index)
 		current_index = _next_alive_index(current_index, direction)
 
 	# In SHEDDING_RACE, a player with 1 card must take the Last Shot before winning.
 	if mode == Mode.SHEDDING_RACE and players[current_index].hand_size() == 1:
 		pending_last_shot = true
+
+## A player passes out (too much whiskey). They miss the rest of this turn if it is theirs,
+## then their next turn is skipped and they wake up with PASS_OUT_PENALTY extra cards.
+## Refused (false) while a forced draw / bomb / jump-in decision is open, or if already out.
+func pass_out(player_index: int) -> bool:
+	if player_index < 0 or player_index >= players.size() or game_over:
+		return false
+	var p := players[player_index]
+	if p.eliminated or p.passed_out or pending_diffuse_player_index == player_index or pending_bomb != null:
+		return false
+	if pending_forced_draw_count > 0 or jump_in_open or pending_last_shot:
+		return false
+	p.passed_out = true
+	p.skip_next_turn = true
+	_emit_log("%s passes out cold." % p.display_name)
+	player_passed_out.emit(player_index)
+	if current_index == player_index:
+		advance_turn()
+	return true
+
+## Called whenever a skip is consumed: a sleeper wakes up and pays for it with cards.
+func _wake_if_passed_out(player_index: int) -> void:
+	var p := players[player_index]
+	if not p.passed_out:
+		return
+	p.passed_out = false
+	_forced_draw(player_index, PASS_OUT_PENALTY)
+	_emit_log("%s wakes up with %d extra cards." % [p.display_name, PASS_OUT_PENALTY])
+	player_woke_up.emit(player_index, PASS_OUT_PENALTY)
 
 ## Uno-style stacking: when the current player is ALREADY the forced-draw target,
 ## playing another Draw card ADDS to the count and pushes the bigger punishment
@@ -223,6 +258,11 @@ func _start_or_stack_forced_draw(from_index: int, amount: int) -> void:
 		pending_forced_draw_amount = amount
 		players[from_index].skip_next_turn = false
 		_emit_log("%s stacks a draw card — the forced draw rises to %d cards!" % [players[from_index].display_name, pending_forced_draw_count])
+	elif pending_forced_draw_count > 0 and pending_forced_draw_player_index == target:
+		# Same player adds another Draw card in one turn (Overcharge): the pile just grows.
+		pending_forced_draw_count += amount
+		pending_forced_draw_amount = amount
+		_emit_log("%s piles on — the forced draw rises to %d cards!" % [players[from_index].display_name, pending_forced_draw_count])
 	else:
 		pending_forced_draw_count = amount
 		pending_forced_draw_amount = amount
@@ -328,10 +368,14 @@ func _apply_action(p: PlayerData, card: Card, options: Dictionary) -> void:
 			p.bank_extra_life()
 			_emit_log("%s banks an Extra Life (now holding %d)." % [p.display_name, p.banked_lives])
 		"choose_deck":
-			var target_idx = options.get("target_player_index", _next_alive_index(current_index, direction))
+			# The player picks a victim AND the deck: the victim immediately draws
+			# one card from that deck and loses their next turn. (The color is
+			# chosen too — handled by the NONE-color block below.)
+			var target_idx: int = options.get("target_player_index", _next_alive_index(current_index, direction))
 			var chosen_pile: String = options.get("chosen_pile", "A")
-			forced_pile_for_player[players[target_idx].id] = chosen_pile
-			_emit_log("%s forces %s's next draw to come from Deck %s." % [p.display_name, players[target_idx].display_name, chosen_pile])
+			_forced_draw(target_idx, 1, chosen_pile)
+			players[target_idx].skip_next_turn = true
+			_emit_log("%s makes %s draw from Deck %s - and skips their turn!" % [p.display_name, players[target_idx].display_name, chosen_pile])
 		"rotate_decks":
 			deck.rotate_decks()
 			_emit_log("%s rotates the decks! Both piles reshuffled and redealt." % p.display_name)
@@ -392,7 +436,7 @@ func _jump_in_candidates() -> Array[int]:
 	if lc.type == Card.CardType.ACTION and lc.action_id in ["swap_hands", "choose_deck", "peek"]:
 		return out
 	for i in range(players.size()):
-		if players[i].eliminated:
+		if players[i].eliminated or players[i].passed_out:
 			continue
 		for c in players[i].hand:
 			if _same_card(c, lc):
@@ -428,6 +472,15 @@ func jump_in(player_index: int) -> bool:
 	_emit_log("%s jumps in with %s!" % [p.display_name, card.display_name])
 	last_played_card = card
 
+	# Play continues from whoever jumped in: everyone between the last actor and
+	# the jumper is passed over (their pending skips are void — they were jumped),
+	# and the jumper's own card resolves from THEIR seat.
+	for passed in _players_between(current_index, player_index):
+		# A sleeper's skip is their wake-up call: it survives being passed over.
+		players[passed].skip_next_turn = players[passed].passed_out
+	p.skip_next_turn = false
+	current_index = player_index
+
 	match card.type:
 		Card.CardType.NUMBER:
 			active_color = card.color
@@ -435,7 +488,14 @@ func jump_in(player_index: int) -> bool:
 			active_action_id = ""
 		Card.CardType.ACTION:
 			active_color = card.color
-			_apply_action(p, card, {})
+			var amount := _draw_amount_for(card.action_id)
+			if amount > 0 and pending_forced_draw_count > 0:
+				# Jumping in on a +N ADDS to the pending draw pile (never resets it).
+				active_number = -1
+				active_action_id = card.action_id
+				_stack_jump_in_draw(player_index, amount)
+			else:
+				_apply_action(p, card, {})
 		_:
 			pass
 
@@ -448,6 +508,34 @@ func jump_in(player_index: int) -> bool:
 	else:
 		jump_in_available.emit(jump_in_candidate_list.duplicate())
 	return true
+
+## A +N jumped in on top of a pending forced draw: the count grows by the card's
+## value and the punishment moves to the seat after the jumper (the previous
+## target is released from their pending skip).
+func _stack_jump_in_draw(from_index: int, amount: int) -> void:
+	var old_target := pending_forced_draw_player_index
+	if old_target >= 0 and old_target < players.size():
+		players[old_target].skip_next_turn = false
+	pending_forced_draw_count += amount
+	pending_forced_draw_amount = amount
+	var target := _next_alive_index(from_index, direction)
+	pending_forced_draw_player_index = target
+	players[target].skip_next_turn = true
+	_emit_log("%s jumps the draw — it rises to %d cards for %s!" % [players[from_index].display_name, pending_forced_draw_count, players[target].display_name])
+
+## Alive seats strictly between `from` and `to`, walking the turn ring in the
+## current direction (the players a jump-in passes over).
+func _players_between(from: int, to: int) -> Array[int]:
+	var out: Array[int] = []
+	if from == to:
+		return out
+	var cur := _next_alive_index(from, direction)
+	var guard := 0
+	while cur != to and cur != from and guard < players.size():
+		out.append(cur)
+		cur = _next_alive_index(cur, direction)
+		guard += 1
+	return out
 
 ## Closes the jump-in window without anyone jumping and advances the turn.
 func close_jump_in_window() -> void:
@@ -496,7 +584,7 @@ func draw_card(player_index: int, pile_choice: String = "A", defer_bomb: bool = 
 		# players draw (eliminated seats are skipped). Drawing one revives the
 		# most recently eliminated player.
 		deck.discard_card(card)
-		if last_eliminated_index >= 0 and last_eliminated_index < players.size() and players[last_eliminated_index].eliminated:
+		if last_eliminated_index >= 0 and last_eliminated_index < players.size() and players[last_eliminated_index].eliminated and not players[last_eliminated_index].left_game:
 			_handle_respawn(players[last_eliminated_index], last_eliminated_index)
 		else:
 			_emit_log("%s drew a Respawn card, but nobody is eliminated — wasted!" % p.display_name)
@@ -650,6 +738,7 @@ func resolve_forced_draw(chosen_pile: String) -> void:
 	# The forced draw replaces the target's turn: consume their skip and move on.
 	if players[target].skip_next_turn:
 		players[target].skip_next_turn = false
+		_wake_if_passed_out(target)
 	advance_turn()
 	_check_win_condition()
 
@@ -673,11 +762,46 @@ func _handle_respawn(p: PlayerData, player_index: int) -> void:
 func _sync_respawn_cards() -> void:
 	var eliminated_count := 0
 	for pl in players:
-		if pl.eliminated:
+		if pl.eliminated and not pl.left_game:
 			eliminated_count += 1
 	deck.remove_respawn_cards()
 	if eliminated_count > 0:
 		deck.add_respawn_cards(RESPAWN_CARDS_PER_ELIMINATED * eliminated_count)
+
+## Online: a player left mid-game. Removes them for good (no respawn), frees their
+## cards and hands the turn on. May end the game if only one player remains.
+func drop_player(index: int) -> void:
+	if index < 0 or index >= players.size():
+		return
+	var p: PlayerData = players[index]
+	if p.left_game:
+		return
+	p.left_game = true
+	p.eliminated = true
+	for c in p.hand:
+		deck.discard_card(c)
+	p.hand.clear()
+	_emit_log("%s left the game." % p.display_name)
+	if pending_forced_draw_count > 0 and pending_forced_draw_player_index == index:
+		pending_forced_draw_count = 0
+		pending_forced_draw_amount = 0
+		pending_forced_draw_player_index = -1
+	if pending_diffuse_player_index == index:
+		pending_bomb = null
+		pending_diffuse_player_index = -1
+	_sync_respawn_cards()
+	var alive := 0
+	var last_name := ""
+	for pl in players:
+		if not pl.eliminated:
+			alive += 1
+			last_name = pl.display_name
+	if alive <= 1:
+		winner_name = last_name if alive == 1 else "Nobody"
+		game_over = true
+		return
+	if current_index == index:
+		advance_turn()
 
 ## Public entry for the UI layer to run _sync_respawn_cards (host/offline only).
 func sync_respawn_cards() -> void:

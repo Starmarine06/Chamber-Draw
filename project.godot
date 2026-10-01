@@ -22,6 +22,8 @@ config/icon="res://icon.svg"
 [autoload]
 
 GameGlobals="*res://scripts/game_globals.gd"
+Settings="*res://scripts/settings.gd"
+AudioManager="*res://scripts/audio_manager.gd"
 EOSConfig="*res://scripts/eos_config.gd"
 EOSGRuntime="*res://addons/epic-online-services-godot/runtime.gd"
 HPlatform="*res://addons/epic-online-services-godot/heos/hplatform.gd"
@@ -38,8 +40,13 @@ _mcp_game_helper="*res://addons/godot_ai/runtime/game_helper.gd"
 
 [display]
 
+window/size/mode=3
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+
+[dotnet]
+
+project/assembly_name="Chamber Draw"
 
 [editor_plugins]
 
@@ -54,3 +61,4 @@ enabled=PackedStringArray("res://addons/epic-online-services-godot/plugin.cfg", 
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="mobile"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true

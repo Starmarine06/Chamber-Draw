@@ -1,13 +1,35 @@
-﻿extends Node
-## Fully scripted guided tutorial. Seeded by game.gd (_start_tutorial), which sets
-## `g` then add_child()s this node and call_deferred()s _run_tutorial(). The director
-## builds every board from scratch (no RNG, no game.setup()), scripts all AI seats,
-## and gates the human's allowed inputs via game.gd's _tut_* flags.
+extends Node
+## Guided tutorial, in seven chapters. game.gd (_start_tutorial) sets `g`, adds
+## this node and call_deferred()s _run_tutorial(). Every board is scripted from
+## scratch (no RNG, no game.setup()), AI seats are driven here, and the human's
+## inputs are gated through game.gd's _tut_* flags.
+##
+## Presentation: a docked coach panel (scripts/ui/tutorial_coach.gd) narrates
+## while the table stays visible, and a spotlight pointer rings exactly what to
+## click. A chapter picker lets players start anywhere.
+
+const Coach := preload("res://scripts/ui/tutorial_coach.gd")
+const UIStyle := preload("res://scripts/ui_style.gd")
 
 var g
 
-var _proceed := false
+var coach: Control
 var _events: Array = []
+var _step := 0
+var _chapter := 0
+var _chapter_steps := 0
+
+const CHAPTERS := [
+	["BASICS", "Matching, drawing, ending your turn"],
+	["ACTION CARDS", "Skip, Reverse, Wild, Swap, Peek, Choose a Deck, Extra Life, Rotate"],
+	["DRAW ATTACKS", "Draw Two / Four / Ten, stacking the pile"],
+	["BOMBS & THE CHAMBER", "Reading the odds, Diffuse, pulling the trigger"],
+	["JUMP-IN", "Slapping down copies out of turn"],
+	["TABLE LIFE", "Smoke a cigarette, pour a whiskey"],
+	["ENDGAME", "Last Shot, Overcharge, Respawn, the Vote"],
+]
+
+# ── Card factories ────────────────────────────────────────────────────
 
 func _make_number(col: int, n: int) -> Card:
 	return CardDatabase._make(Card.CardType.NUMBER, col, n, "", "%s %d" % [_color_name(col), n])
@@ -38,8 +60,8 @@ var _filler_colors: Array = [Card.CardColor.RED, Card.CardColor.ORANGE, Card.Car
 var _filler_numbers: Array = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 var _filler_n: int = 0
 
-## Build a pile of `count` throwaway number cards (distinct value/color combos so
-## they never accidentally match a highlighted play or spawn jump windows).
+## `count` throwaway number cards (distinct combos so they never accidentally
+## match a highlighted play or open a jump-in window).
 func _filler(count: int) -> Array[Card]:
 	var out: Array[Card] = []
 	for i in range(count):
@@ -49,7 +71,7 @@ func _filler(count: int) -> Array[Card]:
 		out.append(_make_number(col, num))
 	return out
 
-## --- tutorial signal plumbing ---
+# ── Signal plumbing ───────────────────────────────────────────────────
 
 func _on_action_done(kind: String, details: Dictionary) -> void:
 	_events.append([kind, details])
@@ -69,63 +91,97 @@ func _await_any(kinds: Array) -> Dictionary:
 	var ev: Array = _events.pop_at(match_idx)
 	return {"kind": ev[0], "details": ev[1]}
 
-## --- overlay helper ---
+# ── Coach helpers ─────────────────────────────────────────────────────
 
-func _ensure_overlay_vbox() -> void:
-	if g.overlay_vbox != null and is_instance_valid(g.overlay_vbox) and g.overlay_vbox.get_parent() == g.overlay:
-		return
-	g.overlay_vbox = VBoxContainer.new()
-	g.overlay_vbox.set_anchors_preset(Control.PRESET_CENTER)
-	g.overlay_vbox.offset_left = -200
-	g.overlay_vbox.offset_right = 200
-	g.overlay_vbox.offset_top = -120
-	g.overlay_vbox.offset_bottom = 120
-	g.overlay_vbox.add_theme_constant_override("separation", 15)
-	g.overlay.add_child(g.overlay_vbox)
+func _chapter_label() -> String:
+	return "CHAPTER %d · %s" % [_chapter + 1, CHAPTERS[_chapter][0]]
 
-## Blocking narrated popup. Mouse is captured while it's up; all _tut_* gates
-## stay off until it closes, so the player can't act underneath.
-func _say(title: String, body: String) -> void:
-	g.overlay.visible = true
-	g.overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	_ensure_overlay_vbox()
-	g._clear_overlay()
-	g._prepare_overlay_popup()
+func _progress() -> float:
+	var within := minf(float(_chapter_steps) / 12.0, 0.95)
+	return (float(_chapter) + within) / float(CHAPTERS.size())
 
-	var title_label := Label.new()
-	title_label.text = title
-	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title_label.add_theme_font_size_override("font_size", 28)
-	title_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.35))
-	g.overlay_vbox.add_child(title_label)
+## Info step: narrate and wait for CONTINUE (or Enter/Space). Input stays locked.
+func _say(title: String, body: String, target: Callable = Callable()) -> void:
+	_step += 1
+	_chapter_steps += 1
+	_lock_input()
+	coach.show_step(_chapter_label(), _step, _progress(), title, body, true, target)
+	await coach.continued
+	g._sfx(&"button")
 
-	var body_label := Label.new()
-	body_label.text = body
-	body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body_label.custom_minimum_size = Vector2(560, 0)
-	body_label.add_theme_font_size_override("font_size", 18)
-	body_label.add_theme_color_override("font_color", Color(0.95, 0.95, 0.9))
-	g.overlay_vbox.add_child(body_label)
+## Action step: narrate + spotlight; the caller unlocks input and awaits the event.
+func _task(title: String, body: String, target: Callable = Callable()) -> void:
+	_step += 1
+	_chapter_steps += 1
+	coach.show_step(_chapter_label(), _step, _progress(), title, body, false, target)
 
-	var ok: Button = g._make_kenney_button("Continue", Vector2(180, 54), 18)
-	g.overlay_vbox.add_child(ok)
-	g._center_overlay_vbox()
+func _cheer(text: String = "NICE!") -> void:
+	coach.set_target(Callable())
+	coach.cheer(text)
+	g._sfx(&"banner")
+	await get_tree().create_timer(0.7).timeout
 
-	_proceed = false
-	ok.pressed.connect(func() -> void: _proceed = true)
-	g._play_sfx(g._sfx_button)
-	while not _proceed:
-		await get_tree().process_frame
-	g.overlay.visible = false
-	g._clear_overlay()
+# ── Spotlight targets (each returns a Rect2 in game-canvas space) ─────
 
-## --- input gating helpers ---
+func _rect_of(c: Control) -> Rect2:
+	if c == null or not is_instance_valid(c) or not c.is_visible_in_tree():
+		return Rect2()
+	return Rect2(c.global_position - g.global_position, c.size * c.scale)
+
+func _t_hand(i: int) -> Callable:
+	return func() -> Rect2:
+		return _rect_of(g.card_nodes[i]) if i < g.card_nodes.size() else Rect2()
+
+func _t_both_decks() -> Callable:
+	return func() -> Rect2:
+		var a: Control = g._draw_btn_a
+		var b: Control = g._draw_btn_b
+		if a == null or b == null:
+			return Rect2()
+		return Rect2(a.position, a.size).merge(Rect2(b.position, b.size))
+
+func _t_gauge(pile: String) -> Callable:
+	return func() -> Rect2:
+		return _rect_of(g._gauge_a if pile == "A" else g._gauge_b)
+
+func _t_node(getter: Callable) -> Callable:
+	return func() -> Rect2:
+		var n: Variant = getter.call()
+		return _rect_of(n as Control) if n is Control else Rect2()
+
+func _t_seat(i: int) -> Callable:
+	return func() -> Rect2:
+		var t: Variant = g._seat_tags.get(i, null)
+		return _rect_of(t as Control) if t is Control else Rect2()
+
+func _t_discard() -> Callable:
+	return func() -> Rect2:
+		var c: Vector2 = g._discard_screen_pos()
+		return Rect2(c - Vector2(46, 64), Vector2(92, 128))
+
+func _t_vice(idx: int) -> Callable:
+	return func() -> Rect2:
+		var row: Node = g.get_node_or_null("ViceRow")
+		if row == null or row.get_child_count() <= idx:
+			return Rect2()
+		return _rect_of(row.get_child(idx) as Control)
+
+func _t_glass() -> Callable:
+	return func() -> Rect2:
+		var gl: Variant = g._table_glass
+		if gl == null or not is_instance_valid(gl):
+			return Rect2()
+		var c: Vector2 = g._unproject((gl as Node3D).global_position)
+		return Rect2(c - Vector2(34, 58), Vector2(68, 70))
+
+# ── Input gating ──────────────────────────────────────────────────────
 
 func _lock_input() -> void:
 	var blocked: Array[int] = [-1]
 	g._tut_input_hands = blocked
 	g._tut_allow_draw = false
 	g._tut_allow_end_turn = false
+	g._tut_allow_vice = false
 
 func _allow_hands(indexes: Array[int]) -> void:
 	_lock_input()
@@ -135,12 +191,13 @@ func _allow_draw() -> void:
 	_lock_input()
 	g._tut_allow_draw = true
 
-## --- board builder ---
+# ── Board builder ─────────────────────────────────────────────────────
 
 func _seed(me: Array[Card], rex: Array[Card], nia: Array[Card], zed: Array[Card],
 		active_color: int, active_number: int, current: int, dir: int,
 		da: Array[Card], db: Array[Card], discard: Array[Card]) -> void:
 	_events.clear()
+	g._force_end_vice()
 	g._dismiss_all_overlays()
 	g._paused = false
 	g._jump_in_window = false
@@ -194,6 +251,10 @@ func _seed(me: Array[Card], rex: Array[Card], nia: Array[Card], zed: Array[Card]
 
 	g._refresh_all()
 	g._check_turn()
+	g._reposition_draw_zones()
+	g._notification_timer = 0.0
+	if g.notification_label:
+		g.notification_label.visible = false
 
 func _ai_play(seat: int, hand_index: int, note: String) -> void:
 	var st: GameState = g.game
@@ -211,13 +272,98 @@ func _bomb_on_both_piles() -> void:
 func _prefill_chamber_blank() -> void:
 	g.game.chamber._chamber = [ChamberDeck.Result.BLANK]
 
-## --- the tutorial ---
+## Resolves a pending forced draw aimed at an AI seat (the director drives AIs).
+func _ai_eats_forced_draw(pile: String) -> void:
+	var st: GameState = g.game
+	if st.pending_forced_draw_count <= 0:
+		return
+	g._animate_forced_draw(pile, st.pending_forced_draw_player_index, st.pending_forced_draw_count)
+	st.resolve_forced_draw(pile)
+	g._refresh_all()
+
+# ── Entry point ───────────────────────────────────────────────────────
 
 func _run_tutorial() -> void:
 	g.tutorial_action_done.connect(_on_action_done)
+	coach = Coach.new()
+	g.add_child(coach)
+	coach.exit_requested.connect(_exit_to_menu)
 	await get_tree().process_frame
 
-	# --- 1. Welcome + play a RED 5 ---
+	var start := await _pick_chapter()
+	for i in range(start, CHAPTERS.size()):
+		_chapter = i
+		_chapter_steps = 0
+		match i:
+			0: await _ch_basics()
+			1: await _ch_actions()
+			2: await _ch_draws()
+			3: await _ch_chamber()
+			4: await _ch_jump()
+			5: await _ch_table_life()
+			6: await _ch_endgame()
+	await _finale()
+
+## Title card + chapter picker. Returns the chapter index to start from.
+func _pick_chapter() -> int:
+	coach.visible = false
+	var dim := ColorRect.new()
+	dim.color = Color(UIStyle.INK, 0.8)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.z_index = 90
+	g.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.add_child(center)
+	var panel := UIStyle.make_panel()
+	center.add_child(panel)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	panel.add_child(v)
+	v.add_child(UIStyle.make_label("THE TUTORIAL", 36, UIStyle.BRASS, true))
+	v.add_child(UIStyle.make_label("Learn the table in seven short chapters - or jump to the one you need.", 14, UIStyle.MUTED))
+	var picked := [-1]
+	var go_all := UIStyle.make_button("START FROM THE TOP", &"primary", Vector2(610, 46), 17)
+	go_all.pressed.connect(func() -> void: picked[0] = 0)
+	v.add_child(go_all)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 8)
+	v.add_child(grid)
+	for i in range(CHAPTERS.size()):
+		var cell := VBoxContainer.new()
+		cell.add_theme_constant_override("separation", 2)
+		var b := UIStyle.make_button("%d · %s" % [i + 1, CHAPTERS[i][0]], &"secondary", Vector2(300, 38), 13)
+		b.tooltip_text = CHAPTERS[i][1]
+		b.pressed.connect(func() -> void: picked[0] = i)
+		cell.add_child(b)
+		var d := UIStyle.make_label(CHAPTERS[i][1], 10, UIStyle.MUTED)
+		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		d.custom_minimum_size = Vector2(300, 0)
+		cell.add_child(d)
+		grid.add_child(cell)
+	var back := UIStyle.make_button("BACK TO MENU", &"danger", Vector2(200, 36), 13)
+	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	back.pressed.connect(_exit_to_menu)
+	v.add_child(back)
+	panel.scale = Vector2(0.92, 0.92)
+	panel.pivot_offset = Vector2(230, 260)
+	g.create_tween().tween_property(panel, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	while picked[0] < 0:
+		await get_tree().process_frame
+	dim.queue_free()
+	coach.visible = true
+	return picked[0]
+
+func _exit_to_menu() -> void:
+	GameGlobals.is_tutorial = false
+	g._force_end_vice()
+	get_tree().change_scene_to_file("res://scenes/menu.tscn")
+
+# ═══ CHAPTER 1 · BASICS ═══════════════════════════════════════════════
+
+func _ch_basics() -> void:
 	_seed(
 		[_make_number(Card.CardColor.RED, 5), _make_number(Card.CardColor.ORANGE, 7),
 			_make_number(Card.CardColor.PURPLE, 2), _make_number(Card.CardColor.GREEN, 3)],
@@ -230,49 +376,18 @@ func _run_tutorial() -> void:
 		Card.CardColor.RED, 4, 0, 1,
 		_filler(15), _filler(15), [_make_number(Card.CardColor.RED, 4)],
 	)
-	await _say("Welcome to Chamber Draw!",
-		"Shedding Race with four seats: you, Rex, Nia and Zed.\n\nEmpty your hand first to win (UNO-style). The top card of the discard (RED 4) sets what's playable: match its COLOR or its NUMBER.\n\nThe RED 5 in your hand matches the color, and playable cards light up.")
+	await _say("Welcome to the back room",
+		"Four seats: [key]you[/key], [key]Rex[/key], [key]Nia[/key] and [key]Zed[/key]. Their tags show each player's cards and banked lives; the [key]▶[/key] marks whose turn it is.\n\nGoal: [good]empty your hand first[/good].")
+	await _say("The pile sets the rules",
+		"The card face-up in the middle is the [key]discard pile[/key]. To play, match its [key]COLOR[/key] or its [key]NUMBER[/key]. The top bar also shows the active color.",
+		_t_discard())
 	_allow_hands([0])
-	await _say("Your move",
-		"Click the RED 5 to play it. Rex sits next in line.")
+	await _task("Play a card",
+		"Your playable cards glow brass; the rest dim. Click the [key]RED 5[/key] - it matches the red.",
+		_t_hand(0))
 	await _await("card")
-	_lock_input()
+	await _cheer()
 
-	# --- 2. Skip ---
-	_seed(
-		[_make_action(Card.CardColor.ORANGE, Card.CardType.ACTION, "skip", "ORANGE SKIP"),
-			_make_number(Card.CardColor.PURPLE, 6), _make_number(Card.CardColor.GREEN, 2),
-			_make_number(Card.CardColor.RED, 7)],
-		_filler(4), _filler(4), _filler(4),
-		Card.CardColor.ORANGE, 3, 0, 1,
-		_filler(15), _filler(15), [_make_number(Card.CardColor.ORANGE, 3)],
-	)
-	await _say("Skip",
-		"Action cards bend the rules. This ORANGE SKIP matches the active color and makes the NEXT player lose a turn.")
-	_allow_hands([0])
-	await _say("Play the Skip",
-		"Click ORANGE SKIP - Rex just got skipped.")
-	await _await("card")
-	_lock_input()
-
-	# --- 3. Wild color ---
-	_seed(
-		[_make_action(Card.CardColor.NONE, Card.CardType.WILD, "wild_color", "WILD"),
-			_make_number(Card.CardColor.ORANGE, 7), _make_number(Card.CardColor.PURPLE, 2),
-			_make_number(Card.CardColor.GREEN, 3)],
-		_filler(4), _filler(4), _filler(4),
-		Card.CardColor.RED, 3, 0, 1,
-		_filler(15), _filler(15), [_make_number(Card.CardColor.RED, 3)],
-	)
-	await _say("Wild Color",
-		"A WILD card plays on absolutely anything. The catch: you must pick a new active color first - a color picker pops up.")
-	_allow_hands([0])
-	await _say("Pick a color",
-		"Click the WILD, then confirm a color. The next turn must match it.")
-	await _await("card")
-	_lock_input()
-
-	# --- 4. Voluntary draw + End Turn ---
 	_seed(
 		[_make_number(Card.CardColor.ORANGE, 7), _make_number(Card.CardColor.PURPLE, 6),
 			_make_number(Card.CardColor.RED, 9), _make_number(Card.CardColor.ORANGE, 4),
@@ -282,17 +397,42 @@ func _run_tutorial() -> void:
 		_filler(15), _filler(15), [_make_number(Card.CardColor.GREEN, 2)],
 	)
 	await _say("Nothing to play?",
-		"Green is active but you hold no green and no 2. Nothing lights up - so rummage a deck instead!\n\nClick on Deck A or Deck B (the glowing piles on the table top) to draw a card.")
+		"[key]GREEN 2[/key] is up and you hold no green and no 2 - nothing glows. Then you [key]draw[/key] from one of the two decks.")
 	_allow_draw()
+	await _task("Draw a card",
+		"Click [key]Deck A[/key] or [key]Deck B[/key] (or press [key]A[/key] / [key]B[/key]).",
+		_t_both_decks())
 	await _await("draw")
-	_lock_input()
-	await _say("Drawn a card",
-		"You keep your turn after drawing - you may play the new card, or pass the turn with END TURN (bottom right).")
+	await _cheer("DRAWN!")
+	await _say("After drawing",
+		"You keep your turn: play the new card if it fits, or pass with [key]END TURN[/key].")
 	g._tut_allow_end_turn = true
+	await _task("End your turn", "Click [key]END TURN[/key].", _t_node(func() -> Variant: return g._end_turn_btn))
 	await _await("end_turn")
-	_lock_input()
+	await _cheer()
+	await _say("Mind the clock",
+		"In real games every turn has a [key]30-second timer[/key] (the ring on the left). Let it run out and you [bad]draw 4[/bad]. The tutorial pauses it for you.\n\nKeyboard: [key]1-9[/key] play a hand card, [key]A/B[/key] draw, [key]Esc[/key] pauses.")
 
-	# --- 5. Reverse ---
+# ═══ CHAPTER 2 · ACTION CARDS ═════════════════════════════════════════
+
+func _ch_actions() -> void:
+	# Skip
+	_seed(
+		[_make_action(Card.CardColor.ORANGE, Card.CardType.ACTION, "skip", "ORANGE SKIP"),
+			_make_number(Card.CardColor.PURPLE, 6), _make_number(Card.CardColor.GREEN, 2),
+			_make_number(Card.CardColor.RED, 7)],
+		_filler(4), _filler(4), _filler(4),
+		Card.CardColor.ORANGE, 3, 0, 1,
+		_filler(15), _filler(15), [_make_number(Card.CardColor.ORANGE, 3)],
+	)
+	await _say("Skip",
+		"Action cards bend the rules. [key]SKIP[/key] makes the NEXT player lose their turn. A Skip also plays on any other Skip, whatever the color.")
+	_allow_hands([0])
+	await _task("Skip Zed", "Click [key]ORANGE SKIP[/key]. Zed sits next to you.", _t_hand(0))
+	await _await("card")
+	await _cheer("SKIPPED!")
+
+	# Reverse
 	_seed(
 		[_make_action(Card.CardColor.GREEN, Card.CardType.ACTION, "reverse", "GREEN REVERSE"),
 			_make_number(Card.CardColor.ORANGE, 7), _make_number(Card.CardColor.PURPLE, 2)],
@@ -300,84 +440,47 @@ func _run_tutorial() -> void:
 		Card.CardColor.GREEN, 3, 0, 1,
 		_filler(15), _filler(15), [_make_number(Card.CardColor.GREEN, 3)],
 	)
-	await _say("Reverse",
-		"REVERSE flips the direction of play. With three opponents, one reversal swings the turn order completely.")
 	_allow_hands([0])
-	await _say("Play the Reverse",
-		"Click GREEN REVERSE. It matches the green 3.")
+	await _task("Reverse",
+		"[key]REVERSE[/key] flips the direction of play (the arrow in the top bar). Click [key]GREEN REVERSE[/key].",
+		_t_hand(0))
 	await _await("card")
-	_lock_input()
+	await _cheer()
 
-	# --- 6. Forced draw at you (Draw Two) ---
+	# Wild
 	_seed(
-		[_make_number(Card.CardColor.PURPLE, 3), _make_number(Card.CardColor.GREEN, 4),
-			_make_number(Card.CardColor.RED, 7), _make_number(Card.CardColor.PURPLE, 9)],
-		_filler(4), _filler(4),
-		[_make_action(Card.CardColor.ORANGE, Card.CardType.ACTION, "draw_two", "ORANGE DRAW 2"),
-			_make_number(Card.CardColor.GREEN, 9), _make_number(Card.CardColor.PURPLE, 5)],
-		Card.CardColor.ORANGE, 8, 3, 1,
-		_filler(15), _filler(15), [_make_number(Card.CardColor.ORANGE, 8)],
+		[_make_action(Card.CardColor.NONE, Card.CardType.WILD, "wild_color", "WILD"),
+			_make_number(Card.CardColor.ORANGE, 7), _make_number(Card.CardColor.PURPLE, 2),
+			_make_number(Card.CardColor.GREEN, 3)],
+		_filler(4), _filler(4), _filler(4),
+		Card.CardColor.RED, 3, 0, 1,
+		_filler(15), _filler(15), [_make_number(Card.CardColor.RED, 3)],
 	)
-	await _say("Draw Two incoming",
-		"Zed is up and matches ORANGE with a ORANGE DRAW 2... aimed right at you.")
-	_ai_play(3, 0, "Zed played a ORANGE Draw Two at you!")
-	await _say("You must draw 2 cards",
-		"The TARGET of a draw chooses which deck to take them from - here that's you.\n\nClick Deck A or Deck B. A lightning bar shows you must draw 2 from the pile you pick.")
-	await _await("forced_draw_choice")
-	_lock_input()
-	await _say("Took your medicine",
-		"That's the Draw Two rule: the attacker plays, the victim draws.")
-	_seed(
-		[_make_action(Card.CardColor.ORANGE, Card.CardType.ACTION, "draw_four", "ORANGE DRAW 4"),
-			_make_number(Card.CardColor.PURPLE, 3), _make_number(Card.CardColor.ORANGE, 4),
-			_make_number(Card.CardColor.RED, 7)],
-		_filler(4), _filler(4),
-		[_make_action(Card.CardColor.GREEN, Card.CardType.ACTION, "draw_four", "GREEN DRAW 4"),
-			_make_number(Card.CardColor.GREEN, 9), _make_number(Card.CardColor.PURPLE, 5)],
-		Card.CardColor.GREEN, 8, 3, 1,
-		_filler(15), _filler(15), [_make_number(Card.CardColor.GREEN, 8)],
-	)
-	await _say("Now it stacks",
-		"Zed plays a GREEN DRAW 4 at you (4 cards). But on your forced turn you hold a matching ORANGE DRAW 4...\n\nTwo options:\n- Click the ORANGE DRAW 4 to STACK: 4 + 4 = 8 cards for the next player.\n- Or click a deck to eat the 4 yourself.")
-	_ai_play(3, 0, "Zed played a GREEN Draw Four at you!")
 	_allow_hands([0])
-	var stack_res := await _await_any(["card", "forced_draw_choice"])
-	_lock_input()
-	if stack_res.kind == "card":
-		var total: int = g.game.pending_forced_draw_count
-		await _say("STACKED!",
-			"The punishment rises to %d cards and the target moves past the stacker. Rex now eats all %d from Deck A." % [total, total])
-		g._animate_forced_draw("A", 1, total)
-		g.game.resolve_forced_draw("A")
-		g._refresh_all()
-		g.game.current_index = 0
-		g._check_turn()
-		await _say("Rex pays the price",
-			"Stacking is the snarkiest rule in Chamber Draw - pile it on!")
-		# Fall through into the next step's own seed.
-	else:
-		await _say("You ate the 4",
-			"Sometimes discretion is the better part of valor. Either way, your turn is consumed by the draw.")
+	await _task("Wild",
+		"A [key]WILD[/key] plays on anything - then YOU pick the new color. Click the WILD, then choose a color.",
+		_t_hand(0))
+	await _await("card")
+	await _cheer()
 
-	# --- 8. Swap hands ---
+	# Swap hands
 	_seed(
 		[_make_action(Card.CardColor.NONE, Card.CardType.ACTION, "swap_hands", "SWAP HANDS"),
 			_make_number(Card.CardColor.ORANGE, 7), _make_number(Card.CardColor.PURPLE, 2)],
-		[_make_number(Card.CardColor.RED, 5), _make_number(Card.CardColor.GREEN, 6),
-			_make_number(Card.CardColor.ORANGE, 3)],
+		[_make_number(Card.CardColor.RED, 5), _make_number(Card.CardColor.GREEN, 6)],
 		_filler(3), _filler(3),
 		Card.CardColor.RED, 4, 0, 1,
 		_filler(15), _filler(15), [_make_number(Card.CardColor.RED, 4)],
 	)
 	await _say("Swap Hands",
-		"SWAP HANDS is an anytime card: it plays on any active color. After you confirm a color, pick a TARGET to trade entire hands with.\n\nChaos, but occasionally genius.")
+		"[key]SWAP HANDS[/key] is an anytime card: pick a color, then a player - you trade [key]entire hands[/key]. Rex holds only 2 cards... you hold 3.",
+		_t_seat(1))
 	_allow_hands([0])
-	await _say("Pick your victim",
-		"Play it, confirm the color, then click the seat you want to swap with.")
+	await _task("Steal the small hand", "Play [key]SWAP HANDS[/key], pick a color, then pick [key]Rex[/key].", _t_hand(0))
 	await _await("card")
-	_lock_input()
+	await _cheer("SWAPPED!")
 
-	# --- 9. Peek ---
+	# Peek
 	_seed(
 		[_make_action(Card.CardColor.NONE, Card.CardType.ACTION, "peek", "PEEK"),
 			_make_number(Card.CardColor.ORANGE, 7), _make_number(Card.CardColor.PURPLE, 2)],
@@ -385,15 +488,14 @@ func _run_tutorial() -> void:
 		Card.CardColor.RED, 4, 0, 1,
 		_filler(15), _filler(15), [_make_number(Card.CardColor.RED, 4)],
 	)
-	await _say("Peek",
-		"PEEK lets you spy the top 3 cards of a deck - priceless intel on which pile hides the bombs.\n\nPlay it, pick a color, then choose a pile. Close the result window when you've seen enough.")
 	_allow_hands([0])
+	await _task("Peek",
+		"[key]PEEK[/key] shows the top 3 cards of a deck - the best way to dodge a bomb. Play it, pick a color and a deck, then close the window.",
+		_t_hand(0))
 	await _await_any(["card", "peek"])
-	_lock_input()
-	await _say("Forewarned is forearmed",
-		"Those three cards are exactly what you'll draw next. Use it, then plan around it.")
+	await _cheer("INTEL!")
 
-	# --- 10. Choose a Deck ---
+	# Choose a Deck (attack)
 	_seed(
 		[_make_action(Card.CardColor.NONE, Card.CardType.ACTION, "choose_deck", "CHOOSE A DECK"),
 			_make_number(Card.CardColor.ORANGE, 7), _make_number(Card.CardColor.PURPLE, 2)],
@@ -402,31 +504,137 @@ func _run_tutorial() -> void:
 		_filler(15), _filler(15), [_make_number(Card.CardColor.RED, 4)],
 	)
 	await _say("Choose a Deck",
-		"CHOOSE A DECK is the reverse of drawing at a victim: it FORCES another player's next draw to come from a specific pile.\n\nPlay it, confirm a color, pick a target, pick a pile.")
+		"An attack. You pick the [key]color[/key], a [key]victim[/key] and a [key]deck[/key]: the victim [bad]draws a card from THAT deck right now[/bad] and [bad]loses their next turn[/bad].")
 	_allow_hands([0])
+	await _task("Make someone draw", "Play [key]CHOOSE A DECK[/key] → color → victim → deck.", _t_hand(0))
 	await _await("card")
-	_lock_input()
-	await _say("Locked in",
-		"Whenever that player next draws, the game pulls from the pile you locked. Dictator-level control.")
+	await _cheer("GOTCHA!")
 
-	# --- 11. Extra Life ---
+	# Extra Life
 	_seed(
 		[_make_action(Card.CardColor.NONE, Card.CardType.ACTION, "extra_life", "EXTRA LIFE"),
-			_make_number(Card.CardColor.ORANGE, 7), _make_number(Card.CardColor.PURPLE, 2),
-			_make_number(Card.CardColor.GREEN, 3)],
+			_make_number(Card.CardColor.ORANGE, 7), _make_number(Card.CardColor.PURPLE, 2)],
 		_filler(4), _filler(4), _filler(4),
 		Card.CardColor.RED, 4, 0, 1,
 		_filler(15), _filler(15), [_make_number(Card.CardColor.RED, 4)],
 	)
-	await _say("Extra Life",
-		"EXTRA LIFE banks a consumable life (you can hold up to two). When a bomb fires at you, an Extra Life is spent automatically to keep you in the game.\n\nIt plays anytime - choose a color first.")
 	_allow_hands([0])
+	await _task("Extra Life",
+		"[key]EXTRA LIFE[/key] banks a life (hold up to [key]2[/key]). If the Chamber ever fires [bad]LIVE[/bad] at you, a banked life is spent instead of you. Play it.",
+		_t_hand(0))
 	await _await("card")
-	_lock_input()
-	await _say("Fully banked",
-		"Your seat now holds an extra life. Remember: it's one-use, and the second life only kicks in once you've been eliminated once.")
+	await _cheer("♥ BANKED")
 
-	# --- 12. Bomb + Diffuse ---
+	# Rotate
+	_seed(
+		[_make_action(Card.CardColor.RED, Card.CardType.ACTION, "rotate_decks", "RED ROTATE"),
+			_make_number(Card.CardColor.ORANGE, 7), _make_number(Card.CardColor.PURPLE, 2)],
+		_filler(3), _filler(3), _filler(3),
+		Card.CardColor.RED, 2, 0, 1,
+		_filler(15), _filler(15), [_make_number(Card.CardColor.RED, 2)],
+	)
+	_allow_hands([0])
+	await _task("Rotate the Decks",
+		"[key]ROTATE[/key] reshuffles both decks together and redeals them - bomb odds get rewritten. Watch the gauges change. Play it.",
+		_t_hand(0))
+	await _await("card")
+	await _cheer("SHUFFLED!")
+
+# ═══ CHAPTER 3 · DRAW ATTACKS ═════════════════════════════════════════
+
+func _ch_draws() -> void:
+	_seed(
+		[_make_number(Card.CardColor.PURPLE, 3), _make_number(Card.CardColor.GREEN, 4),
+			_make_number(Card.CardColor.RED, 7), _make_number(Card.CardColor.PURPLE, 9)],
+		_filler(4), _filler(4),
+		[_make_action(Card.CardColor.ORANGE, Card.CardType.ACTION, "draw_two", "ORANGE DRAW 2"),
+			_make_number(Card.CardColor.GREEN, 9), _make_number(Card.CardColor.PURPLE, 5)],
+		Card.CardColor.ORANGE, 8, 3, -1,
+		_filler(15), _filler(15), [_make_number(Card.CardColor.ORANGE, 8)],
+	)
+	await _say("Incoming!",
+		"[key]DRAW 2 / 4 / 10[/key] make the next player draw. Zed is about to hit you with a Draw Two...",
+		_t_seat(3))
+	_ai_play(3, 0, "Zed played an ORANGE Draw Two at you!")
+	await _task("You choose the deck",
+		"The [key]victim[/key] picks which deck the cards come from. Check the odds gauges, then click a deck. (Drawing uses up your turn.)",
+		_t_both_decks())
+	await _await("forced_draw_choice")
+	await _cheer("TAKEN")
+
+	_seed(
+		[_make_action(Card.CardColor.ORANGE, Card.CardType.ACTION, "draw_four", "ORANGE DRAW 4"),
+			_make_number(Card.CardColor.PURPLE, 3), _make_number(Card.CardColor.ORANGE, 4),
+			_make_number(Card.CardColor.RED, 7)],
+		_filler(4), _filler(4),
+		[_make_action(Card.CardColor.GREEN, Card.CardType.ACTION, "draw_four", "GREEN DRAW 4"),
+			_make_number(Card.CardColor.GREEN, 9), _make_number(Card.CardColor.PURPLE, 5)],
+		Card.CardColor.GREEN, 8, 3, -1,
+		_filler(15), _filler(15), [_make_number(Card.CardColor.GREEN, 8)],
+	)
+	await _say("Stacking",
+		"When you're the victim you can [good]STACK[/good]: play ANY Draw card (any color, any +N) and the total [key]adds up[/key] and passes to the next player.")
+	_ai_play(3, 0, "Zed played a GREEN Draw Four at you!")
+	_allow_hands([0])
+	await _task("Pass it on",
+		"Click your [key]ORANGE DRAW 4[/key] to stack (4 + 4 = 8 for the next player) - or click a deck to eat the 4.",
+		_t_hand(0))
+	var res := await _await_any(["card", "forced_draw_choice"])
+	_lock_input()
+	if res.kind == "card":
+		var total: int = g.game.pending_forced_draw_count
+		await _cheer("+%d STACKED!" % total)
+		var victim: int = g.game.pending_forced_draw_player_index
+		await _say("%s pays" % g.game.players[victim].display_name,
+			"The pile grew to [bad]%d cards[/bad] and moved past you. %s eats them all." % [total, g.game.players[victim].display_name], _t_seat(victim))
+		_ai_eats_forced_draw("A")
+	else:
+		await _say("You ate the 4", "Also fine - but stacking is how the pros stay light. Next time, pile it on!")
+
+	_seed(
+		[_make_number(Card.CardColor.PURPLE, 3), _make_number(Card.CardColor.ORANGE, 4),
+			_make_number(Card.CardColor.RED, 7), _make_number(Card.CardColor.GREEN, 9)],
+		_filler(4), _filler(4),
+		[_make_action(Card.CardColor.RED, Card.CardType.ACTION, "draw_ten", "DRAW 10"),
+			_make_number(Card.CardColor.GREEN, 9), _make_number(Card.CardColor.PURPLE, 5)],
+		Card.CardColor.RED, 3, 3, -1,
+		_filler(15), _filler(15), [_make_number(Card.CardColor.RED, 3)],
+	)
+	await _say("The heavyweight",
+		"[key]DRAW 10[/key] is colorless - it plays anytime. No Draw card to stack this time...")
+	_ai_play(3, 0, "Zed dropped a DRAW TEN on you!")
+	await _task("Take the ten", "Pick a deck to draw your 10.", _t_both_decks())
+	await _await("forced_draw_choice")
+	await _cheer("OUCH")
+
+# ═══ CHAPTER 4 · BOMBS & THE CHAMBER ══════════════════════════════════
+
+func _ch_chamber() -> void:
+	# Reading the odds: Deck A hides bombs deep down, Deck B is clean.
+	var risky: Array[Card] = _filler(8)
+	risky.insert(0, _make_bomb())
+	risky.insert(3, _make_bomb())
+	risky.insert(5, _make_bomb())
+	_seed(
+		[_make_number(Card.CardColor.PURPLE, 3), _make_number(Card.CardColor.ORANGE, 4),
+			_make_number(Card.CardColor.GREEN, 9)],
+		_filler(4), _filler(4), _filler(4),
+		Card.CardColor.RED, 2, 0, 1,
+		risky, _filler(11), [_make_number(Card.CardColor.RED, 2)],
+	)
+	await _say("Every deck is loaded",
+		"Some cards in the decks are [bad]BOMBS[/bad]. Draw one and you face [bad]THE CHAMBER[/bad].\n\nEach deck's gauge shows its [key]odds[/key]: the percent chance its next card is live, with a cylinder of red rounds.",
+		_t_gauge("A"))
+	await _say("Compare", "Deck A's odds are high. Deck B is clean - [good]0%[/good].", _t_gauge("B"))
+	_allow_draw()
+	await _task("Play the odds", "You have nothing to play. Draw from the [good]safer deck[/good].", _t_both_decks())
+	var pick := await _await("draw")
+	if str(pick.details.get("pile", "")) == "B":
+		await _cheer("SMART!")
+	else:
+		await _say("Lucky this time", "Deck A was the risky one - read the gauges before every draw!")
+
+	# Diffuse
 	_seed(
 		[_make_diffuse(), _make_number(Card.CardColor.PURPLE, 3),
 			_make_number(Card.CardColor.ORANGE, 4), _make_number(Card.CardColor.RED, 7)],
@@ -436,23 +644,19 @@ func _run_tutorial() -> void:
 	)
 	_prefill_chamber_blank()
 	_bomb_on_both_piles()
-	await _say("THE BOMB",
-		"Some piles carry BOMBS. Both decks' top cards are armed - you'll hit one no matter which you draw.\n\nLuckily you're holding a DIFFUSE card. Draw from Deck A and see what happens when the fuse is pulled.")
+	await _say("Diffuse",
+		"Both decks now have a bomb on top. You're holding a [good]DIFFUSE[/good] - it cancels a bomb (and is used up).",
+		_t_hand(0))
 	_allow_draw()
-	var bomb_res := await _await_any(["draw", "diffuse_use", "chamber_done"])
-	while bomb_res.kind == "draw":
-		g._show_notification("Deck A has the Bomb - draw from the middle of the pile if you dare. (Any draw fires it!)", 3.0)
-		_allow_draw()
-		bomb_res = await _await_any(["draw", "diffuse_use", "chamber_done"])
+	await _task("Draw the bomb", "Draw from either deck, then choose [key]Use Diffuse[/key].", _t_both_decks())
+	var b := await _await_any(["diffuse_use", "chamber_done"])
 	_lock_input()
-	if bomb_res.kind == "diffuse_use":
-		await _say("Diffused!",
-			"Boom averted - the DIFFUSE is consumed and discarded for good. Without it you'd have drawn from the CHAMBER...")
+	if b.kind == "diffuse_use":
+		await _cheer("DEFUSED!")
 	else:
-		await _say("You pulled the trigger",
-			"Since no Diffuse was used, the chamber spins. It landed BLANK this time - but a live chamber eliminates you outright.")
+		await _say("Brave", "You took the risk instead of the Diffuse. It came up BLANK - this time.")
 
-	# --- 13. Bomb, no Diffuse -> Chamber ---
+	# The Chamber
 	_seed(
 		[_make_number(Card.CardColor.PURPLE, 3), _make_number(Card.CardColor.ORANGE, 4),
 			_make_number(Card.CardColor.RED, 7), _make_number(Card.CardColor.GREEN, 9)],
@@ -462,110 +666,183 @@ func _run_tutorial() -> void:
 	)
 	_prefill_chamber_blank()
 	_bomb_on_both_piles()
-	await _say("No Diffuse? Take the ride",
-		"This time your hand holds no Diffuse. Both decks are still armed - draw from Deck A to see what the CHAMBER does to a bomber without protection.")
+	await _say("No Diffuse",
+		"Without a Diffuse, a bomb means [bad]THE CHAMBER[/bad]: a revolver cylinder spins and fires one of:\n[bad]LIVE[/bad] - penalty (or elimination in Last One Standing)\n[key]BLANK[/key] - nothing happens\n[bad]BACKFIRE[/bad] - it kicks back\n[good]LUCKY DRAW[/good] - fortune favors you")
 	_allow_draw()
-	var chamber_res := await _await_any(["draw", "chamber_done"])
-	while chamber_res.kind == "draw":
-		g._show_notification("Both decks are armed - the Bomb fires on whichever pile you draw!", 3.0)
-		_allow_draw()
-		chamber_res = await _await_any(["draw", "chamber_done"])
-	_lock_input()
-	await _say("BLANK - you live",
-		"The chamber was empty. But ELECTRIFY (live) eliminates you, LUCKY DRAW spits cards your way, and BACKFIRE makes the attacker draw instead. Only one way to find out which...")
+	await _task("Pull the trigger", "Draw from a deck and face the Chamber.", _t_both_decks())
+	await _await("chamber_done")
+	await _cheer("STILL HERE")
+	await _say("Know your odds",
+		"Bombs are one-time: once used they're gone. A banked [key]Extra Life[/key] absorbs a LIVE. Keep an eye on the gauges - they update after every draw.")
 
-	# --- 14. Jump-In: AI acts, you answer ---
+# ═══ CHAPTER 5 · JUMP-IN ══════════════════════════════════════════════
+
+func _ch_jump() -> void:
+	# AI plays, you jump.
 	_seed(
 		[_make_number(Card.CardColor.RED, 5), _make_number(Card.CardColor.ORANGE, 7),
 			_make_number(Card.CardColor.PURPLE, 2), _make_number(Card.CardColor.GREEN, 3)],
-		_filler(4),
-		_filler(4),
+		_filler(4), _filler(4),
 		[_make_number(Card.CardColor.RED, 5), _make_number(Card.CardColor.GREEN, 9),
 			_make_number(Card.CardColor.PURPLE, 5)],
 		Card.CardColor.RED, 4, 3, 1,
 		_filler(15), _filler(15), [_make_number(Card.CardColor.RED, 4)],
 	)
 	await _say("Jump-In",
-		"Every once in a while the tables turn. Zed is about to play a RED 5 - and you are holding the EXACT same card.\n\nAny player (you included) with a copy may answer out of turn: JUMP IN!")
+		"If someone plays a card and you hold the [key]EXACT same card[/key] (same color and value), you can slap yours down [good]out of turn[/good].\n\nZed is about to play a RED 5 - and you hold one too.",
+		_t_seat(3))
 	_ai_play(3, 0, "Zed played a RED 5!")
 	await _await("jump_in_window")
-	await _say("Your copy reacts!",
-		"Zed's RED 5 opened a short Jump-In window - and you hold a copy.")
 	g._show_jump_in_prompt()
-	g._show_notification("You hold the exact match - click JUMP IN! (or Pass).", 4.0)
-	var jump_res := await _await_any(["jump_done", "jump_pass"])
-	if jump_res.kind == "jump_done":
-		await _say("JUMPED IN!",
-			"Your same-number card slapped down on Zed's pile, out of turn. Jump chains keep the window open while copies keep answering.")
+	await _task("JUMP IN!", "Click [key]JUMP IN![/key] before the window closes.", _t_node(func() -> Variant: return g._jump_prompt))
+	var jr := await _await_any(["jump_done", "jump_pass"])
+	if jr.kind == "jump_done":
+		await _cheer("JUMPED!")
+		await _say("Play continues from YOU",
+			"A jump-in [key]moves the turn to the jumper[/key]: everyone in between is skipped and play carries on from your seat.",
+			_t_seat(3))
 	else:
 		g._close_jump_window()
-		await _say("Passed",
-			"No drama - Zed's play simply stands. But you never had to skip that chance...")
+		await _say("Passed", "No drama - Zed's play stands. Next time, jump!")
 
-	# --- 15. Jump-In: you act, AI answers ---
+	# Jump-in on a +2 adds to the pile.
+	_seed(
+		[_make_action(Card.CardColor.ORANGE, Card.CardType.ACTION, "draw_two", "ORANGE DRAW 2"),
+			_make_number(Card.CardColor.PURPLE, 2), _make_number(Card.CardColor.GREEN, 3)],
+		_filler(3), _filler(3),
+		[_make_action(Card.CardColor.ORANGE, Card.CardType.ACTION, "draw_two", "ORANGE DRAW 2"),
+			_make_number(Card.CardColor.GREEN, 9), _make_number(Card.CardColor.PURPLE, 5)],
+		Card.CardColor.ORANGE, 6, 3, 1,
+		_filler(15), _filler(15), [_make_number(Card.CardColor.ORANGE, 6)],
+	)
+	await _say("Jumping a Draw card",
+		"Zed is about to fire a +2 at Rex - and you hold the same [key]ORANGE DRAW 2[/key]. Jumping in on a Draw card [good]ADDS to the pile[/good]...")
+	_ai_play(3, 0, "Zed played an ORANGE Draw Two at Rex!")
+	await _await("jump_in_window")
+	g._show_jump_in_prompt()
+	await _task("Pile it on", "Click [key]JUMP IN![/key]", _t_node(func() -> Variant: return g._jump_prompt))
+	var jr2 := await _await_any(["jump_done", "jump_pass"])
+	if jr2.kind == "jump_done":
+		var total: int = g.game.pending_forced_draw_count
+		await _cheer("+%d!" % total)
+		var victim: int = g.game.pending_forced_draw_player_index
+		await _say("It bounced!",
+			"The pile is now [bad]%d cards[/bad], and since play continues from you, it lands on the player [key]after you[/key] - Zed himself!" % total,
+			_t_seat(victim))
+		_ai_eats_forced_draw("B")
+	else:
+		g._close_jump_window()
+		await _say("Passed", "Rex takes the 2. Jumping would have doubled it.")
+
+	# You play, Zed jumps.
 	_seed(
 		[_make_number(Card.CardColor.RED, 5), _make_number(Card.CardColor.ORANGE, 7),
 			_make_number(Card.CardColor.PURPLE, 2)],
-		_filler(3),
-		_filler(3),
+		_filler(3), _filler(3),
 		[_make_number(Card.CardColor.RED, 5), _make_number(Card.CardColor.GREEN, 9)],
 		Card.CardColor.RED, 4, 0, 1,
 		_filler(15), _filler(15), [_make_number(Card.CardColor.RED, 4)],
 	)
-	await _say("Now you're the target",
-		"Same trick, mirrored: you play a RED 5 while Zed holds the other copy. Play it - then watch Zed steal the spotlight.")
 	_allow_hands([0])
+	await _task("It works both ways", "Play your [key]RED 5[/key] - Zed holds the other one...", _t_hand(0))
 	await _await("jump_in_window")
 	_lock_input()
-	var zed_seat := 3
-	g._show_notification("Zed holds your exact card - he jumps in out of turn!", 3.0)
 	if g._jump_in_window:
-		g._ai_jump_in(zed_seat)
+		g._ai_jump_in(3)
 	await _await("jump_done")
-	await _say("Copies duel",
-		"Zed consumed his copy in the window. Whoever answers with a copy keeps the window open; a pass closes it and play moves on.")
+	await _say("Zed jumped you",
+		"Zed slapped his copy down, so play now continues from [key]Zed[/key]. Watch for copies in YOUR hand every time a card hits the pile.",
+		_t_seat(3))
 
-	# --- 16. Rotate decks ---
-	_seed(
-		[_make_action(Card.CardColor.RED, Card.CardType.ACTION, "rotate_decks", "RED ROTATE"),
-			_make_number(Card.CardColor.ORANGE, 7), _make_number(Card.CardColor.PURPLE, 2)],
-		_filler(3), _filler(3), _filler(3),
-		Card.CardColor.RED, 2, 0, 1,
-		_filler(15), _filler(15), [_make_number(Card.CardColor.RED, 2)],
-	)
-	await _say("Rotate the Decks",
-		"ROTATE makes both piles dump into one, reshuffle, and split 50/50 - mid-game. It scrambles everything you thought you knew about the bomb piles.\n\nThis one's red, so no color picker.")
-	_allow_hands([0])
-	await _await("card")
-	_lock_input()
-	await _say("Shuffled",
-		"Piles are bigger, cleaner and freshly dealt. Bomb probabilities just got rewritten.")
+# ═══ CHAPTER 6 · TABLE LIFE ═══════════════════════════════════════════
 
-	# --- 17. Draw Ten, the dinosaur ---
+func _ch_table_life() -> void:
 	_seed(
 		[_make_number(Card.CardColor.PURPLE, 3), _make_number(Card.CardColor.ORANGE, 4),
-			_make_number(Card.CardColor.RED, 7), _make_number(Card.CardColor.GREEN, 9)],
-		_filler(4), _filler(4),
-		[_make_action(Card.CardColor.RED, Card.CardType.ACTION, "draw_ten", "RED DRAW 10"),
-			_make_number(Card.CardColor.GREEN, 9), _make_number(Card.CardColor.PURPLE, 5)],
-		Card.CardColor.RED, 3, 3, 1,
-		_filler(15), _filler(15), [_make_number(Card.CardColor.RED, 3)],
+			_make_number(Card.CardColor.GREEN, 9), _make_number(Card.CardColor.RED, 1)],
+		_filler(4), _filler(4), _filler(4),
+		Card.CardColor.RED, 2, 1, 1,
+		_filler(15), _filler(15), [_make_number(Card.CardColor.RED, 2)],
 	)
-	await _say("DRAW TEN",
-		"The heavyweight. Zed matches RED and drops a DRAW 10 at you - a full ten-card punishment, same deck-choice rule as before.")
-	_ai_play(3, 0, "Zed played a RED Draw Ten at you!")
-	await _say("Ten cards to take",
-		"Click a deck to take the ten. (In theory you can stack a DRAW 10 onto a DRAW 10 for double the pain - but your hand holds no draw card right now, so eat the ten.)")
-	await _await("forced_draw_choice")
-	_lock_input()
-	await _say("That's a monster hand",
-		"Ten cards is rough. This is exactly why stocking DIFFUSE and EXTRA LIFE matters in the real game.")
+	await _say("Settle in",
+		"Long night? You can [key]smoke[/key] and [key]drink[/key] at the table - between turns or while you think. You'll [key]set your cards face-down[/key] first; you can't play while your hands are busy (and the clock keeps running on your turn).")
 
-	# --- Finale ---
-	await _say("Everything's covered!",
-		"You've seen it all:\n\n- UNO shedding, Skip, Reverse, Wild Color\n- Draw Two / Four / Ten with stacking\n- Swap Hands, Peek, Choose a Deck, Rotate Decks\n- Extra Life, Diffuse & the Chamber, Jump-In\n\nStill unshown (and waiting in a real match): eliminated players add RESPAWN cards that revive the last one out, a 1-card inhibitor called the LAST SHOT, and when every bomb is gone the survivors VOTE to continue or end the round.")
-	await _say("Go win one",
-		"Head to the main menu and start a real match against the AI - favours are paid back in full.")
-	await get_tree().create_timer(0.6).timeout
-	GameGlobals.is_tutorial = false
-	get_tree().change_scene_to_file("res://scenes/menu.tscn")
+	# Smoke
+	g._tut_allow_vice = true
+	await _task("Light up", "Press [key]S[/key] or click [key]SMOKE[/key].", _t_vice(0))
+	await _await("vice_start")
+	g._tut_allow_vice = false
+	await _say("A fresh one",
+		"No cigarette yet, so you take one from the [key]pack[/key] and [key]light it[/key]. Watch...")
+	var fps: Script = g.FirstPersonSmoke
+	var smoke_start: float = fps.burn
+	while g._smoke_session != null and is_instance_valid(g._smoke_session) and int(g._smoke_session.phase) == 0:
+		await get_tree().process_frame  # wait out the pack + lighter intro
+	smoke_start = fps.burn
+	await _task("Take a drag",
+		"[key]Scroll the mouse wheel[/key] to pull on it - the longer you scroll, the bigger the drag. Stop to exhale.")
+	while g._smoke_session != null and is_instance_valid(g._smoke_session) and float(fps.burn) - smoke_start < 0.1:
+		await get_tree().process_frame
+	await _cheer("SMOOTH")
+	await _say("It burns down",
+		"Every pull burns tobacco - the cigarette gets shorter and [key]stays that length[/key] next time. Smoke it to the filter and you flick the butt; the next one comes from the pack.")
+	g._tut_allow_vice = true
+	await _task("Put it out", "Press [key]S[/key] again.", _t_vice(0))
+	if g._smoke_session != null and is_instance_valid(g._smoke_session):
+		await _await("vice_end")
+	else:
+		_events.clear()
+	g._tut_allow_vice = false
+	await _cheer()
+
+	# Whiskey
+	g._tut_allow_vice = true
+	await _task("Pour one", "Press [key]W[/key] or click [key]WHISKEY[/key].", _t_vice(1))
+	await _await("vice_start")
+	g._tut_allow_vice = false
+	var fpd: Script = g.FirstPersonDrink
+	while g._drink_session != null and is_instance_valid(g._drink_session) and int(g._drink_session.phase) == 0:
+		await get_tree().process_frame
+	var lvl: float = fpd.level
+	await _task("Sip", "[key]Scroll[/key] to sip. Each scroll is a mouthful - hear the ice?")
+	while g._drink_session != null and is_instance_valid(g._drink_session) and lvl - float(fpd.level) < 0.14:
+		await get_tree().process_frame
+	await _cheer("CHEERS")
+	g._tut_allow_vice = true
+	await _task("Set it down", "Press [key]W[/key] to put the glass back on the table.", _t_vice(1))
+	if g._drink_session != null and is_instance_valid(g._drink_session):
+		await _await("vice_end")
+	else:
+		_events.clear()
+	g._tut_allow_vice = false
+	await _say("It stays on the table",
+		"Your glass waits on the felt; next time your hand reaches for it. Drain it and the [key]bartender refills[/key] it.",
+		_t_glass())
+	await _say("Don't wait for the pour",
+		"While the bartender pours, press [key]W[/key]: your hand lets go and your cards come back up, so you can [key]keep playing[/key]. The moment he's done, your cards go back down and the glass is in your hand again.")
+	await _say("Know your limit",
+		"Drinks differ: [key]beer[/key] is mild, [key]wine[/key] and champagne medium, whiskey standard, [key]vodka[/key] hits harder and [key]absinthe[/key] is brutal. Drink too much and you [bad]PASS OUT[/bad]: the rest of your turn is lost, your next turn is skipped, and you wake with [bad]3 extra cards[/bad] - still a little drunk.")
+
+# ═══ CHAPTER 7 · ENDGAME ══════════════════════════════════════════════
+
+func _ch_endgame() -> void:
+	await _say("The Last Shot",
+		"With [key]one card left[/key] you can't just win - first you must take the [bad]LAST SHOT[/bad]: draw from a deck and survive whatever you pull.")
+	await _say("Overcharged",
+		"Survive the Last Shot and you're [good]OVERCHARGED[/good]: you may play [key]up to 2 cards[/key] that turn - often enough to win on the spot. Two Draw cards in one Overcharged turn [key]add together[/key]: Draw 10 + Draw 4 makes the next player draw 14.")
+	await _say("Respawn",
+		"When a player is knocked out, [key]RESPAWN[/key] cards are shuffled into the decks. Draw one and the most recently eliminated player comes back with a fresh hand.")
+	await _say("The Vote",
+		"Once every bomb has been used, the survivors [key]vote[/key]: reload the decks and keep playing, or end it and all share the win.")
+	await _say("Your color and your voice",
+		"No two players ever share a [key]color[/key] - online lobbies grey out the ones already taken. Online games also have [key]voice chat[/key]: hold [key]V[/key] to talk (or switch to open mic in Settings), [key]M[/key] mutes your mic, [key]N[/key] deafens you, and the voice bar lets you mute any one player.")
+	await _say("Two ways to play",
+		"[key]Shedding Race[/key]: first to empty their hand wins; LIVE = penalty.\n[key]Last One Standing[/key]: LIVE eliminates - last player alive wins.")
+
+func _finale() -> void:
+	_chapter = CHAPTERS.size() - 1
+	_chapter_steps = 99
+	await _say("You're ready",
+		"You've learned the whole table: matching, action cards, draw attacks and stacking, bombs and the Chamber, jump-ins, and how to enjoy a smoke and a drink while you're at it.\n\nPick a mode in the menu and [good]go win one[/good].")
+	await get_tree().create_timer(0.3).timeout
+	_exit_to_menu()

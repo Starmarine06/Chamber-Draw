@@ -1,4 +1,6 @@
 extends Control
+const UIStyle := preload("res://scripts/ui_style.gd")
+const Sound := preload("res://scripts/sound.gd")
 
 ## Main menu for Chamber Draw. Selects player count and game mode,
 ## then loads either offline (vs AI) or online (EOS multiplayer lobby).
@@ -13,6 +15,7 @@ var status_label: Label
 var _menu_swatch_group: ButtonGroup
 
 func _ready() -> void:
+	UIStyle.install()
 	_build_ui()
 	var eos = get_node_or_null("/root/EOSManager")
 	if eos:
@@ -20,17 +23,8 @@ func _ready() -> void:
 		eos.lobby_state_changed.connect(_on_lobby_state_changed)
 
 func _build_ui() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.06, 0.04, 0.1)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	var bg := preload("res://scripts/noir_background.gd").new()
 	add_child(bg)
-
-	var vignette := ColorRect.new()
-	vignette.color = Color(0, 0, 0, 0)
-	vignette.set_anchors_preset(Control.PRESET_FULL_RECT)
-	vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(vignette)
 
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -41,98 +35,72 @@ func _build_ui() -> void:
 	center.add_child(vbox)
 
 	# Title
-	var title := Label.new()
-	title.text = "CHAMBER DRAW"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 44)
-	title.add_theme_color_override("font_color", Color(0.95, 0.82, 0.35))
+	var title := UIStyle.make_label("CHAMBER DRAW", 48, UIStyle.BRASS, true)
+	title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	title.add_theme_constant_override("outline_size", 6)
 	vbox.add_child(title)
+	_flicker(title)
 
-	var subtitle := Label.new()
-	subtitle.text = "Every draw could be your last."
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_font_size_override("font_size", 16)
-	subtitle.add_theme_color_override("font_color", Color(0.6, 0.55, 0.45))
+	var subtitle := UIStyle.make_label("Every draw could be your last.", 16, UIStyle.MUTED)
 	vbox.add_child(subtitle)
 
+	var rule := ColorRect.new()
+	rule.color = Color(UIStyle.BRASS_DIM, 0.8)
+	rule.custom_minimum_size = Vector2(260, 1)
+	rule.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	vbox.add_child(rule)
+
 	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 12)
+	spacer.custom_minimum_size = Vector2(0, 6)
 	vbox.add_child(spacer)
 
 	# Player count
-	var pcount_label := Label.new()
-	pcount_label.text = "PLAYERS"
-	pcount_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	pcount_label.add_theme_font_size_override("font_size", 16)
-	pcount_label.add_theme_color_override("font_color", Color(0.7, 0.65, 0.55))
-	vbox.add_child(pcount_label)
+	vbox.add_child(UIStyle.make_caption("PLAYERS"))
 
 	var pcount_row := HBoxContainer.new()
 	pcount_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	pcount_row.add_theme_constant_override("separation", 20)
 	vbox.add_child(pcount_row)
 
-	var btn_minus := _make_button("-", Color(0.25, 0.2, 0.3), 50, 44)
+	var btn_minus := UIStyle.make_button("-", &"secondary", Vector2(50, 42), 22)
 	btn_minus.pressed.connect(func(): num_players = maxi(num_players - 1, 2); _refresh())
 	pcount_row.add_child(btn_minus)
 
-	player_count_label = Label.new()
-	player_count_label.text = "4"
-	player_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	player_count_label = UIStyle.make_label("4", 32, UIStyle.CREAM, true)
 	player_count_label.custom_minimum_size = Vector2(60, 0)
-	player_count_label.add_theme_font_size_override("font_size", 32)
-	player_count_label.add_theme_color_override("font_color", Color.WHITE)
 	pcount_row.add_child(player_count_label)
 
-	var btn_plus := _make_button("+", Color(0.25, 0.2, 0.3), 50, 44)
+	var btn_plus := UIStyle.make_button("+", &"secondary", Vector2(50, 42), 22)
 	btn_plus.pressed.connect(func(): num_players = mini(num_players + 1, 6); _refresh())
 	pcount_row.add_child(btn_plus)
 
 	# Mode
-	var mode_title := Label.new()
-	mode_title.text = "GAME MODE"
-	mode_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	mode_title.add_theme_font_size_override("font_size", 16)
-	mode_title.add_theme_color_override("font_color", Color(0.7, 0.65, 0.55))
-	vbox.add_child(mode_title)
+	vbox.add_child(UIStyle.make_caption("GAME MODE"))
 
 	var mode_row := HBoxContainer.new()
 	mode_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	mode_row.add_theme_constant_override("separation", 10)
 	vbox.add_child(mode_row)
 
-	var btn_prev := _make_button("<", Color(0.25, 0.2, 0.3), 50, 44)
+	var btn_prev := UIStyle.make_button("◀", &"secondary", Vector2(50, 42), 18)
 	btn_prev.pressed.connect(func(): game_mode = (game_mode + 1) % 2; _refresh())
 	mode_row.add_child(btn_prev)
 
-	mode_label = Label.new()
-	mode_label.text = "Shedding Race"
-	mode_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	mode_label.custom_minimum_size = Vector2(200, 0)
-	mode_label.add_theme_font_size_override("font_size", 20)
-	mode_label.add_theme_color_override("font_color", Color.WHITE)
+	mode_label = UIStyle.make_label("Shedding Race", 20, UIStyle.CREAM, true)
+	mode_label.custom_minimum_size = Vector2(260, 0)
 	mode_row.add_child(mode_label)
 
-	var btn_next := _make_button(">", Color(0.25, 0.2, 0.3), 50, 44)
+	var btn_next := UIStyle.make_button("▶", &"secondary", Vector2(50, 42), 18)
 	btn_next.pressed.connect(func(): game_mode = (game_mode + 1) % 2; _refresh())
 	mode_row.add_child(btn_next)
 
-	mode_desc = Label.new()
+	mode_desc = UIStyle.make_label("First to empty hand wins. No elimination.", 14, UIStyle.MUTED)
 	mode_desc.name = "ModeDesc"
-	mode_desc.text = "First to empty hand wins. No elimination."
-	mode_desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	mode_desc.add_theme_font_size_override("font_size", 13)
-	mode_desc.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 	mode_desc.custom_minimum_size = Vector2(300, 0)
 	vbox.add_child(mode_desc)
 
 	# Your color (offline: you pick, AI get random distinct colors)
-	var color_title := Label.new()
-	color_title.text = "YOUR COLOR"
-	color_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	color_title.add_theme_font_size_override("font_size", 16)
-	color_title.add_theme_color_override("font_color", Color(0.7, 0.65, 0.55))
-	vbox.add_child(color_title)
+	vbox.add_child(UIStyle.make_caption("YOUR COLOR"))
 
 	var color_row := HBoxContainer.new()
 	color_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -142,7 +110,7 @@ func _build_ui() -> void:
 	_menu_swatch_group = ButtonGroup.new()
 	_menu_swatch_group.allow_unpress = false
 	for i in range(GameGlobals.PALETTE.size()):
-		var swatch := _make_swatch_button(i)
+		var swatch := UIStyle.make_swatch(GameGlobals.PALETTE[i], GameGlobals.PALETTE_NAMES[i])
 		swatch.button_group = _menu_swatch_group
 		swatch.button_pressed = i == GameGlobals.my_color_idx
 		swatch.pressed.connect(_on_color_picked.bind(i))
@@ -158,100 +126,60 @@ func _build_ui() -> void:
 	play_row.add_theme_constant_override("separation", 20)
 	vbox.add_child(play_row)
 
-	var offline_btn := _make_button("OFFLINE", Color(0.18, 0.5, 0.55), 200, 50)
-	offline_btn.add_theme_font_size_override("font_size", 24)
+	var offline_btn := UIStyle.make_button("OFFLINE", &"primary", Vector2(200, 50), 22)
 	offline_btn.pressed.connect(_on_offline)
 	play_row.add_child(offline_btn)
 
-	var online_btn := _make_button("ONLINE", Color(0.18, 0.55, 0.25), 200, 50)
-	online_btn.add_theme_font_size_override("font_size", 24)
+	var online_btn := UIStyle.make_button("ONLINE", &"confirm", Vector2(200, 50), 22)
 	online_btn.pressed.connect(_on_online)
 	play_row.add_child(online_btn)
 
-	var tutorial_btn := _make_button("TUTORIAL", Color(0.55, 0.45, 0.15), 200, 46)
-	tutorial_btn.add_theme_font_size_override("font_size", 18)
-	tutorial_btn.pressed.connect(_on_tutorial)
-	vbox.add_child(tutorial_btn)
+	var aux_row := HBoxContainer.new()
+	aux_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	aux_row.add_theme_constant_override("separation", 20)
+	vbox.add_child(aux_row)
 
-	var quit_btn := _make_button("EXIT GAME", Color(0.55, 0.16, 0.16), 200, 46)
-	quit_btn.add_theme_font_size_override("font_size", 18)
+	var tutorial_btn := UIStyle.make_button("TUTORIAL", &"secondary", Vector2(200, 44), 17)
+	tutorial_btn.pressed.connect(_on_tutorial)
+	aux_row.add_child(tutorial_btn)
+
+	var settings_btn := UIStyle.make_button("SETTINGS", &"secondary", Vector2(200, 44), 17)
+	settings_btn.pressed.connect(_on_settings)
+	aux_row.add_child(settings_btn)
+
+	var quit_btn := UIStyle.make_button("EXIT GAME", &"danger", Vector2(200, 44), 17)
+	quit_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	quit_btn.pressed.connect(_on_quit)
 	vbox.add_child(quit_btn)
 
 	# Status label
-	status_label = Label.new()
-	status_label.text = ""
-	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	status_label.add_theme_font_size_override("font_size", 14)
-	status_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.65))
+	status_label = UIStyle.make_label("", 14, UIStyle.MUTED)
 	status_label.custom_minimum_size = Vector2(400, 0)
 	vbox.add_child(status_label)
 
 	_refresh()
+	Sound.play_music(&"menu")
 
-func _make_button(text: String, col: Color, w: int, h: int) -> Button:
-	var btn := Button.new()
-	btn.text = text
-	btn.custom_minimum_size = Vector2(w, h)
+	# Entrance: fade + rise.
+	vbox.modulate.a = 0.0
+	var tw := create_tween().set_parallel()
+	tw.tween_property(vbox, "modulate:a", 1.0, 0.5)
+	tw.tween_property(center, "position:y", 0.0, 0.55).from(24.0).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
-	var style_normal := StyleBoxFlat.new()
-	style_normal.bg_color = col
-	style_normal.corner_radius_top_left = 6
-	style_normal.corner_radius_top_right = 6
-	style_normal.corner_radius_bottom_left = 6
-	style_normal.corner_radius_bottom_right = 6
-	style_normal.content_margin_left = 8
-	style_normal.content_margin_right = 8
-	style_normal.content_margin_top = 4
-	style_normal.content_margin_bottom = 4
-	btn.add_theme_stylebox_override("normal", style_normal)
+## Old-neon flicker on the title: mostly steady, occasional quick dips.
+func _flicker(l: Label) -> void:
+	var tw := create_tween().set_loops()
+	tw.tween_interval(2.6)
+	tw.tween_property(l, "modulate:a", 0.55, 0.05)
+	tw.tween_property(l, "modulate:a", 1.0, 0.07)
+	tw.tween_interval(0.12)
+	tw.tween_property(l, "modulate:a", 0.75, 0.04)
+	tw.tween_property(l, "modulate:a", 1.0, 0.1)
+	tw.tween_interval(4.1)
 
-	var style_hover := style_normal.duplicate()
-	style_hover.bg_color = col.lightened(0.2)
-	btn.add_theme_stylebox_override("hover", style_hover)
-
-	var style_pressed := style_normal.duplicate()
-	style_pressed.bg_color = col.darkened(0.15)
-	btn.add_theme_stylebox_override("pressed", style_pressed)
-
-	btn.add_theme_font_size_override("font_size", 20)
-	btn.add_theme_color_override("font_color", Color.WHITE)
-	return btn
-
-func _make_swatch_button(idx: int) -> Button:
-	var col: Color = GameGlobals.PALETTE[idx]
-	var btn := Button.new()
-	btn.text = GameGlobals.PALETTE_NAMES[idx]
-	btn.toggle_mode = true
-	btn.custom_minimum_size = Vector2(48, 34)
-	btn.add_theme_font_size_override("font_size", 11)
-	var font_col := Color.WHITE if col.get_luminance() < 0.5 else Color(0.12, 0.1, 0.06)
-	btn.add_theme_color_override("font_color", font_col)
-	btn.add_theme_color_override("font_hover_color", font_col)
-	btn.add_theme_color_override("font_pressed_color", font_col)
-
-	var normal := StyleBoxFlat.new()
-	normal.bg_color = col.darkened(0.12)
-	normal.border_color = col.darkened(0.3)
-	normal.set_border_width_all(2)
-	normal.set_corner_radius_all(6)
-	btn.add_theme_stylebox_override("normal", normal)
-
-	var hover := StyleBoxFlat.new()
-	hover.bg_color = col
-	hover.border_color = col.lightened(0.35)
-	hover.set_border_width_all(2)
-	hover.set_corner_radius_all(6)
-	btn.add_theme_stylebox_override("hover", hover)
-
-	var pressed := StyleBoxFlat.new()
-	pressed.bg_color = col
-	pressed.border_color = Color.WHITE
-	pressed.set_border_width_all(3)
-	pressed.set_corner_radius_all(6)
-	btn.add_theme_stylebox_override("pressed", pressed)
-	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	return btn
+func _on_settings() -> void:
+	var panel := preload("res://scripts/settings_panel.gd").new()
+	add_child(panel)
 
 func _on_color_picked(idx: int) -> void:
 	GameGlobals.my_color_idx = idx
@@ -325,6 +253,6 @@ func _set_status(text: String, is_error: bool) -> void:
 	if status_label:
 		status_label.text = text
 		if is_error:
-			status_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.25))
+			status_label.add_theme_color_override("font_color", UIStyle.BLOOD_LIGHT)
 		else:
-			status_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.65))
+			status_label.add_theme_color_override("font_color", UIStyle.MUTED)

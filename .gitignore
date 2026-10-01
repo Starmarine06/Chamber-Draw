@@ -64,3 +64,7 @@ addons/epic-online-services-godot/_eos_sdk_*/bin/
 
 # ---- auto-guard (final) ----
 Chamber Draw Installer.exe
+
+# ---- Blender autosave backups ----
+*.blend1
+archive/

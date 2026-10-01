@@ -8,7 +8,9 @@ var color: Color = GameGlobals.PALETTE[0]
 var hand: Array[Card] = []
 var banked_lives: int = 0        # from Extra Life cards, one-time-use consumable
 var eliminated: bool = false
+var left_game: bool = false     # online: disconnected/left mid-game; never respawns
 var skip_next_turn: bool = false
+var passed_out: bool = false    # drank too much: sleeps through their next turn, wakes with penalty cards
 
 const MAX_BANKED_LIVES = 2       # a player can hold at most TWO banked lives (GDD: max 2)
 

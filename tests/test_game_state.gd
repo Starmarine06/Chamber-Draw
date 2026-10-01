@@ -269,12 +269,19 @@ func test_play_rotate_decks_preserves_count() -> void:
 	assert_eq(gs.deck.pile_a.size() + gs.deck.pile_b.size(), before, "card count preserved")
 
 
-func test_play_choose_deck_records_forced_pile() -> void:
+func test_play_choose_deck_makes_target_draw_and_skip() -> void:
 	var gs := _new_game(4)
+	gs.direction = 1  # ring [0,3,1,2]: seat 2 is NOT next, so its skip stays pending
+	gs.current_index = 0
 	var choose := _action(Card.CardColor.NONE, "choose_deck")
-	_give(gs, 0, [choose])
-	gs.play_card(0, 0, {"target_player_index": 2, "chosen_pile": "B"})
-	assert_eq(gs.forced_pile_for_player.get(gs.players[2].id, ""), "B")
+	_give(gs, 0, [choose, _action(Card.CardColor.RED, "skip")])
+	var before := gs.players[2].hand.size()
+	var pile_b_before := gs.deck.pile_b.size()
+	gs.play_card(0, 0, {"target_player_index": 2, "chosen_pile": "B", "chosen_color": Card.CardColor.GREEN})
+	assert_eq(gs.players[2].hand.size(), before + 1, "victim draws one card now")
+	assert_true(gs.deck.pile_b.size() < pile_b_before, "drawn from the chosen deck (B)")
+	assert_true(gs.players[2].skip_next_turn, "victim loses their next turn")
+	assert_eq(gs.active_color, Card.CardColor.GREEN, "player chose the color")
 
 
 # ── advance_turn / skips ─────────────────────────────────────────────────────
@@ -314,6 +321,59 @@ func test_advance_turn_consumes_skip_next_turn() -> void:
 	gs.advance_turn()
 	assert_eq(gs.current_index, 1, "skipped player passed over")
 	assert_false(gs.players[3].skip_next_turn, "skip flag consumed")
+
+
+# ── passing out (too much whiskey) ──────────────────────────────────────────
+
+func test_pass_out_on_own_turn_ends_it_and_skips_next() -> void:
+	var gs := _new_game(4)
+	gs.direction = 1
+	gs.current_index = 0
+	assert_true(gs.pass_out(0), "pass_out accepted")
+	assert_true(gs.players[0].passed_out, "flag set")
+	assert_true(gs.current_index != 0, "their turn ends at once")
+	assert_true(gs.players[0].skip_next_turn, "next turn will be skipped")
+
+
+func test_passed_out_player_wakes_with_penalty_cards() -> void:
+	var gs := _new_game(4)
+	gs.direction = 1
+	gs.current_index = 0
+	gs.pass_out(3)           # seat 3 sleeps (not their turn); ring 0 -> 3 -> 1 -> 2
+	var before := gs.players[3].hand.size()
+	gs.advance_turn()
+	assert_eq(gs.current_index, 1, "sleeper's turn skipped")
+	assert_false(gs.players[3].passed_out, "wakes when the skip is consumed")
+	assert_eq(gs.players[3].hand.size(), before + gs.PASS_OUT_PENALTY, "wakes with extra cards")
+
+
+func test_pass_out_refused_during_forced_draw() -> void:
+	var gs := _new_game(4)
+	gs.pending_forced_draw_count = 2
+	gs.pending_forced_draw_player_index = 1
+	assert_false(gs.pass_out(0), "no passing out mid forced draw")
+	assert_false(gs.players[0].passed_out, "flag untouched")
+
+
+func test_passed_out_player_cannot_jump_in() -> void:
+	var gs := _new_game(3)
+	var card := CardDatabase._make(Card.CardType.NUMBER, Card.CardColor.RED, 5, "Red 5", "red_5")
+	gs.last_played_card = card
+	gs.players[1].hand.clear()
+	gs.players[1].hand.append(CardDatabase._make(Card.CardType.NUMBER, Card.CardColor.RED, 5, "Red 5", "red_5"))
+	assert_true(gs._jump_in_candidates().has(1), "awake holder can jump in")
+	gs.players[1].passed_out = true
+	assert_false(gs._jump_in_candidates().has(1), "sleeper cannot")
+
+
+func test_overcharge_double_draw_adds_up() -> void:
+	var gs := _new_game(4)
+	gs.direction = 1
+	gs.current_index = 0
+	gs._start_or_stack_forced_draw(0, 10)
+	gs._start_or_stack_forced_draw(0, 4)
+	assert_eq(gs.pending_forced_draw_count, 14, "Draw Ten then Draw Four in one turn = 14")
+	assert_eq(gs.pending_forced_draw_player_index, gs._next_alive_index(0, 1), "same victim")
 
 
 func test_advance_turn_forced_draw_target_keeps_turn() -> void:
@@ -854,6 +914,50 @@ func test_close_jump_in_window_advances() -> void:
 	gs.close_jump_in_window()
 	assert_false(gs.jump_in_open, "window closed")
 	assert_eq(gs.current_index, 1, "turn advanced after close")
+
+
+func test_jump_in_turn_continues_from_jumper() -> void:
+	# Ring for 4 players is [0, 3, 1, 2]. Seat 0 plays, seat 1 jumps in: seat 3
+	# (next in line) is passed over and play continues AFTER the jumper (seat 2).
+	var gs := _new_game(4)
+	gs.direction = 1
+	gs.current_index = 0
+	_set_active(gs, Card.CardColor.RED, 4)
+	var red4 := _number(Card.CardColor.RED, 4)
+	var copy := CardDatabase._make(Card.CardType.NUMBER, Card.CardColor.RED, 4, "", "copy")
+	_give(gs, 0, [red4, _number(Card.CardColor.GREEN, 1)])
+	_give(gs, 1, [copy, _number(Card.CardColor.GREEN, 2), _number(Card.CardColor.GREEN, 3)])
+	_give(gs, 2, [_number(Card.CardColor.GREEN, 5), _number(Card.CardColor.GREEN, 6)])
+	_give(gs, 3, [_number(Card.CardColor.GREEN, 7), _number(Card.CardColor.GREEN, 8)])
+	gs.play_card(0, 0)
+	assert_true(gs.jump_in_open, "seat 1 holds a copy")
+	assert_true(gs.jump_in(1), "jump-in succeeds")
+	assert_false(gs.jump_in_open, "no more copies")
+	assert_eq(gs.current_index, gs._next_alive_index(1, 1), "turn continues after the jumper")
+	assert_ne(gs.current_index, 3, "the seat between was jumped over")
+
+
+func test_jump_in_on_draw_two_adds_to_pile() -> void:
+	var gs := _new_game(4)
+	gs.direction = 1
+	gs.current_index = 0
+	_set_active(gs, Card.CardColor.RED, -1)
+	var d2 := _action(Card.CardColor.RED, "draw_two")
+	var d2_copy := CardDatabase._make(Card.CardType.ACTION, Card.CardColor.RED, -1, "draw_two", "copy")
+	_give(gs, 0, [d2, _number(Card.CardColor.GREEN, 1)])
+	_give(gs, 1, [d2_copy, _number(Card.CardColor.GREEN, 2), _number(Card.CardColor.GREEN, 3)])
+	_give(gs, 2, [_number(Card.CardColor.GREEN, 5), _number(Card.CardColor.GREEN, 6)])
+	_give(gs, 3, [_number(Card.CardColor.GREEN, 7), _number(Card.CardColor.GREEN, 8)])
+	gs.play_card(0, 0)
+	assert_eq(gs.pending_forced_draw_count, 2, "+2 pending")
+	var first_target := gs.pending_forced_draw_player_index
+	assert_true(gs.jump_in(1), "jump in with the matching +2")
+	assert_eq(gs.pending_forced_draw_count, 4, "jumped +2 ADDS to the pile (2 + 2)")
+	var new_target := gs._next_alive_index(1, 1)
+	assert_eq(gs.pending_forced_draw_player_index, new_target, "punishment moves past the jumper")
+	if first_target != new_target:
+		assert_false(gs.players[first_target].skip_next_turn, "previous target released")
+	assert_eq(gs.current_index, new_target, "the new target is on the clock to draw or stack")
 
 
 func test_jump_in_not_allowed_for_swap_hands() -> void:

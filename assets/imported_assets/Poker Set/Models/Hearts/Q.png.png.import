@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://dbfjn4nvhrhu4"
 path.s3tc="res://.godot/imported/Q.png.png-42b624eb0ce21a7e845b2af3f93b389c.s3tc.ctex"
+path.etc2="res://.godot/imported/Q.png.png-42b624eb0ce21a7e845b2af3f93b389c.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/imported_assets/Poker Set/Models/Hearts/Q.png.png"
-dest_files=["res://.godot/imported/Q.png.png-42b624eb0ce21a7e845b2af3f93b389c.s3tc.ctex"]
+dest_files=["res://.godot/imported/Q.png.png-42b624eb0ce21a7e845b2af3f93b389c.s3tc.ctex", "res://.godot/imported/Q.png.png-42b624eb0ce21a7e845b2af3f93b389c.etc2.ctex"]
 
 [params]
 

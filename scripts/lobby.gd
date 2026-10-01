@@ -1,4 +1,6 @@
 extends Control
+const UIStyle := preload("res://scripts/ui_style.gd")
+const Sound := preload("res://scripts/sound.gd")
 
 ## Online lobby. Entry point for EOS multiplayer: host or join by 6-char code.
 ## Features an Among Us style room code generation, copy button, and live roster.
@@ -22,10 +24,12 @@ var start_button: Button
 var back_button: Button
 var color_panel: VBoxContainer
 var _swatch_group: ButtonGroup
+var _swatches: Array[Button] = []
 var session_mode: int = 0
 var _copy_timer: SceneTreeTimer = null
 
 func _ready() -> void:
+	UIStyle.install()
 	_build_ui()
 	EOSManager.login_state_changed.connect(_on_login_state)
 	EOSManager.lobby_state_changed.connect(_on_lobby_state)
@@ -34,6 +38,9 @@ func _ready() -> void:
 	if not EOSManager.logged_in:
 		_set_view(LobbyView.CONNECTING)
 		EOSManager.request_login()
+	elif EOSManager.lobby != null:
+		# Back from a finished game ("Play Again"): still in the room.
+		_set_view(LobbyView.HOSTING if EOSManager.is_host else LobbyView.WAITING)
 	else:
 		_set_view(LobbyView.CHOOSE)
 
@@ -50,10 +57,7 @@ func _exit_tree() -> void:
 #region UI Construction
 
 func _build_ui() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.06, 0.04, 0.1)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	var bg := preload("res://scripts/noir_background.gd").new()
 	add_child(bg)
 
 	var center := CenterContainer.new()
@@ -66,11 +70,7 @@ func _build_ui() -> void:
 	center.add_child(main_vbox)
 
 	# Title
-	var title := Label.new()
-	title.text = "ONLINE LOBBY"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 34)
-	title.add_theme_color_override("font_color", Color(0.95, 0.82, 0.35))
+	var title := UIStyle.make_label("ONLINE LOBBY", 36, UIStyle.BRASS, true)
 	main_vbox.add_child(title)
 
 	# Status Label
@@ -79,7 +79,7 @@ func _build_ui() -> void:
 	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	status_label.add_theme_font_size_override("font_size", 14)
-	status_label.add_theme_color_override("font_color", Color(0.7, 0.65, 0.55))
+	status_label.add_theme_color_override("font_color", UIStyle.MUTED)
 	main_vbox.add_child(status_label)
 
 	# ─────────────────────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ func _build_ui() -> void:
 	main_vbox.add_child(choose_panel)
 
 	# Host Box
-	var host_card := _make_panel_container(Color(0.12, 0.09, 0.18))
+	var host_card := _make_panel_container()
 	var host_box := VBoxContainer.new()
 	host_box.add_theme_constant_override("separation", 8)
 	host_card.add_child(host_box)
@@ -99,16 +99,16 @@ func _build_ui() -> void:
 	host_title.text = "HOST A NEW GAME"
 	host_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	host_title.add_theme_font_size_override("font_size", 15)
-	host_title.add_theme_color_override("font_color", Color(0.8, 0.75, 0.65))
+	host_title.add_theme_color_override("font_color", UIStyle.MUTED)
 	host_box.add_child(host_title)
 
-	var host_btn := _make_button("CREATE ROOM", Color(0.18, 0.55, 0.25), -1, 46)
+	var host_btn := _make_button("CREATE ROOM", &"primary", -1, 46)
 	host_btn.pressed.connect(_on_host_pressed)
 	host_box.add_child(host_btn)
 	choose_panel.add_child(host_card)
 
 	# Join Box
-	var join_card := _make_panel_container(Color(0.12, 0.09, 0.18))
+	var join_card := _make_panel_container()
 	var join_box := VBoxContainer.new()
 	join_box.add_theme_constant_override("separation", 8)
 	join_card.add_child(join_box)
@@ -117,7 +117,7 @@ func _build_ui() -> void:
 	join_title.text = "JOIN PRIVATE ROOM"
 	join_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	join_title.add_theme_font_size_override("font_size", 15)
-	join_title.add_theme_color_override("font_color", Color(0.8, 0.75, 0.65))
+	join_title.add_theme_color_override("font_color", UIStyle.MUTED)
 	join_box.add_child(join_title)
 
 	var join_row := HBoxContainer.new()
@@ -129,7 +129,8 @@ func _build_ui() -> void:
 	code_field.text = ""
 	code_field.max_length = 6
 	code_field.custom_minimum_size = Vector2(260, 44)
-	code_field.add_theme_font_size_override("font_size", 18)
+	code_field.add_theme_font_size_override("font_size", 22)
+	code_field.add_theme_font_override("font", _code_font())
 	code_field.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	code_field.text_changed.connect(func(t: String):
 		code_field.text = t.to_upper()
@@ -138,7 +139,7 @@ func _build_ui() -> void:
 	code_field.text_submitted.connect(func(_t: String): _on_join_pressed())
 	join_row.add_child(code_field)
 
-	var join_btn := _make_button("JOIN", Color(0.2, 0.45, 0.7), 120, 44)
+	var join_btn := _make_button("JOIN", &"confirm", 120, 44)
 	join_btn.pressed.connect(_on_join_pressed)
 	join_row.add_child(join_btn)
 	choose_panel.add_child(join_card)
@@ -152,7 +153,7 @@ func _build_ui() -> void:
 	main_vbox.add_child(room_panel)
 
 	# Code Banner Card (Among Us style)
-	var code_card := _make_panel_container(Color(0.15, 0.12, 0.22))
+	var code_card := _make_panel_container()
 	var code_box := VBoxContainer.new()
 	code_box.add_theme_constant_override("separation", 4)
 	code_card.add_child(code_box)
@@ -161,7 +162,7 @@ func _build_ui() -> void:
 	room_title.text = "ROOM CODE"
 	room_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	room_title.add_theme_font_size_override("font_size", 13)
-	room_title.add_theme_color_override("font_color", Color(0.7, 0.65, 0.55))
+	room_title.add_theme_color_override("font_color", UIStyle.MUTED)
 	code_box.add_child(room_title)
 
 	var code_display_row := HBoxContainer.new()
@@ -172,13 +173,14 @@ func _build_ui() -> void:
 	room_code_label = Label.new()
 	room_code_label.text = "------"
 	room_code_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	room_code_label.add_theme_font_size_override("font_size", 38)
-	room_code_label.add_theme_color_override("font_color", Color(0.98, 0.9, 0.4))
+	room_code_label.add_theme_font_size_override("font_size", 44)
+	room_code_label.add_theme_color_override("font_color", UIStyle.BRASS_LIGHT)
+	room_code_label.add_theme_font_override("font", _code_font())
 	room_code_label.add_theme_constant_override("outline_size", 4)
 	room_code_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
 	code_display_row.add_child(room_code_label)
 
-	copy_btn = _make_button("COPY", Color(0.3, 0.3, 0.4), 80, 36)
+	copy_btn = _make_button("COPY", &"secondary", 96, 36)
 	copy_btn.add_theme_font_size_override("font_size", 14)
 	copy_btn.pressed.connect(_on_copy_code_pressed)
 	code_display_row.add_child(copy_btn)
@@ -186,7 +188,7 @@ func _build_ui() -> void:
 	room_panel.add_child(code_card)
 
 	# Game Mode
-	mode_button = _make_button("MODE: Shedding Race", Color(0.25, 0.2, 0.3), -1, 38)
+	mode_button = _make_button("MODE: Shedding Race", &"secondary", -1, 38)
 	mode_button.add_theme_font_size_override("font_size", 16)
 	mode_button.pressed.connect(func():
 		session_mode = (session_mode + 1) % 2
@@ -198,11 +200,11 @@ func _build_ui() -> void:
 	mode_label_client.text = "MODE: Shedding Race"
 	mode_label_client.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	mode_label_client.add_theme_font_size_override("font_size", 15)
-	mode_label_client.add_theme_color_override("font_color", Color(0.8, 0.75, 0.65))
+	mode_label_client.add_theme_color_override("font_color", UIStyle.MUTED)
 	room_panel.add_child(mode_label_client)
 
 	# Roster Box
-	var roster_card := _make_panel_container(Color(0.1, 0.08, 0.15))
+	var roster_card := _make_panel_container()
 	var roster_box := VBoxContainer.new()
 	roster_card.add_child(roster_box)
 
@@ -215,8 +217,13 @@ func _build_ui() -> void:
 	roster_box.add_child(roster_label)
 	room_panel.add_child(roster_card)
 
+	# Voice chat controls (hidden until the lobby has a voice room)
+	var voice_bar := preload("res://scripts/ui/voice_bar.gd").new()
+	voice_bar.alignment = BoxContainer.ALIGNMENT_CENTER
+	room_panel.add_child(voice_bar)
+
 	# Start Button (Host only)
-	start_button = _make_button("START GAME", Color(0.85, 0.55, 0.12), -1, 48)
+	start_button = _make_button("START GAME", &"primary", -1, 48)
 	start_button.disabled = true
 	start_button.pressed.connect(_on_start_pressed)
 	room_panel.add_child(start_button)
@@ -232,7 +239,7 @@ func _build_ui() -> void:
 	color_title.text = "YOUR COLOR"
 	color_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	color_title.add_theme_font_size_override("font_size", 13)
-	color_title.add_theme_color_override("font_color", Color(0.7, 0.65, 0.55))
+	color_title.add_theme_color_override("font_color", UIStyle.MUTED)
 	color_panel.add_child(color_title)
 
 	var color_row := HBoxContainer.new()
@@ -243,93 +250,37 @@ func _build_ui() -> void:
 	_swatch_group = ButtonGroup.new()
 	_swatch_group.allow_unpress = false
 	for i in range(GameGlobals.PALETTE.size()):
-		var swatch := _make_swatch_button(i)
+		var swatch := UIStyle.make_swatch(GameGlobals.PALETTE[i], "")   # colour only, no text
+		swatch.tooltip_text = GameGlobals.PALETTE_NAMES[i]
+		swatch.custom_minimum_size = Vector2(40, 40)
 		swatch.button_group = _swatch_group
 		swatch.button_pressed = i == GameGlobals.my_color_idx
 		swatch.pressed.connect(_on_color_picked.bind(i))
 		color_row.add_child(swatch)
+		_swatches.append(swatch)
 
 	# Back / Leave Button
-	back_button = _make_button("BACK", Color(0.35, 0.18, 0.2), -1, 40)
+	back_button = _make_button("BACK", &"danger", -1, 40)
 	back_button.add_theme_font_size_override("font_size", 16)
 	back_button.pressed.connect(_on_back_pressed)
 	main_vbox.add_child(back_button)
 
 	_set_view(view)
 
-func _make_panel_container(bg_color: Color) -> PanelContainer:
-	var pc := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = bg_color
-	style.corner_radius_top_left = 8
-	style.corner_radius_top_right = 8
-	style.corner_radius_bottom_left = 8
-	style.corner_radius_bottom_right = 8
-	style.content_margin_left = 12
-	style.content_margin_right = 12
-	style.content_margin_top = 10
-	style.content_margin_bottom = 10
-	pc.add_theme_stylebox_override("panel", style)
-	return pc
+## A plain, high-contrast monospace face for the room code (the game's display font makes
+## 0/O, 1/I and 6/G look alike, which is painful when reading a code off someone's screen).
+func _code_font() -> Font:
+	var f := SystemFont.new()
+	f.font_names = PackedStringArray(["Consolas", "DejaVu Sans Mono", "Liberation Mono", "Courier New", "monospace"])
+	f.font_weight = 700
+	f.antialiasing = TextServer.FONT_ANTIALIASING_LCD
+	return f
 
-func _make_button(text: String, col: Color, w: int, h: int) -> Button:
-	var btn := Button.new()
-	btn.text = text
-	btn.custom_minimum_size = Vector2(w if w > 0 else 200, h)
-	var style_normal := StyleBoxFlat.new()
-	style_normal.bg_color = col
-	style_normal.corner_radius_top_left = 6
-	style_normal.corner_radius_top_right = 6
-	style_normal.corner_radius_bottom_left = 6
-	style_normal.corner_radius_bottom_right = 6
-	btn.add_theme_stylebox_override("normal", style_normal)
-	var style_hover := style_normal.duplicate()
-	style_hover.bg_color = col.lightened(0.2)
-	btn.add_theme_stylebox_override("hover", style_hover)
-	var style_pressed := style_normal.duplicate()
-	style_pressed.bg_color = col.darkened(0.15)
-	btn.add_theme_stylebox_override("pressed", style_pressed)
-	var style_disabled := StyleBoxFlat.new()
-	style_disabled.bg_color = Color(0.15, 0.15, 0.17)
-	btn.add_theme_stylebox_override("disabled", style_disabled)
-	btn.add_theme_font_size_override("font_size", 18)
-	btn.add_theme_color_override("font_color", Color.WHITE)
-	return btn
+func _make_panel_container() -> PanelContainer:
+	return UIStyle.make_panel()
 
-func _make_swatch_button(idx: int) -> Button:
-	var col: Color = GameGlobals.PALETTE[idx]
-	var btn := Button.new()
-	btn.text = GameGlobals.PALETTE_NAMES[idx]
-	btn.toggle_mode = true
-	btn.custom_minimum_size = Vector2(48, 32)
-	btn.add_theme_font_size_override("font_size", 11)
-	var font_col := Color.WHITE if col.get_luminance() < 0.5 else Color(0.12, 0.1, 0.06)
-	btn.add_theme_color_override("font_color", font_col)
-	btn.add_theme_color_override("font_hover_color", font_col)
-	btn.add_theme_color_override("font_pressed_color", font_col)
-
-	var normal := StyleBoxFlat.new()
-	normal.bg_color = col.darkened(0.12)
-	normal.border_color = col.darkened(0.3)
-	normal.set_border_width_all(2)
-	normal.set_corner_radius_all(6)
-	btn.add_theme_stylebox_override("normal", normal)
-
-	var hover := StyleBoxFlat.new()
-	hover.bg_color = col
-	hover.border_color = col.lightened(0.35)
-	hover.set_border_width_all(2)
-	hover.set_corner_radius_all(6)
-	btn.add_theme_stylebox_override("hover", hover)
-
-	var pressed := StyleBoxFlat.new()
-	pressed.bg_color = col
-	pressed.border_color = Color.WHITE
-	pressed.set_border_width_all(3)
-	pressed.set_corner_radius_all(6)
-	btn.add_theme_stylebox_override("pressed", pressed)
-	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	return btn
+func _make_button(text: String, variant: StringName, w: int, h: int) -> Button:
+	return UIStyle.make_button(text, variant, Vector2(w if w > 0 else 200, h), 17)
 
 #endregion
 
@@ -354,7 +305,7 @@ func _set_view(new_view: int) -> void:
 		mode_label_client.visible = not is_host
 		start_button.visible = is_host
 	else:
-		back_button.text = "BACK TO MENU"
+		back_button.text = "CANCEL" if view == LobbyView.JOINING else "BACK TO MENU"
 
 	match new_view:
 		LobbyView.CONNECTING:
@@ -395,7 +346,7 @@ func _on_lobby_state(state: String) -> void:
 			_set_view(LobbyView.CHOOSE if EOSManager.logged_in else LobbyView.LOGIN_FAILED)
 		"error":
 			_set_view(LobbyView.CHOOSE if EOSManager.logged_in else LobbyView.LOGIN_FAILED)
-			status_label.text = "Room error or room not found. Check code and try again."
+			status_label.text = EOSManager.last_error if EOSManager.last_error != "" else "Room error or room not found. Check code and try again."
 
 func _on_host_pressed() -> void:
 	status_label.text = "Creating room..."
@@ -441,21 +392,76 @@ func _on_back_pressed() -> void:
 	if view == LobbyView.HOSTING or view == LobbyView.WAITING:
 		EOSManager.leave_lobby()
 		_set_view(LobbyView.CHOOSE)
+	elif view == LobbyView.JOINING:
+		# Cancel the pending join instead of leaving the screen in a stuck state.
+		EOSManager.leave_lobby()
+		_set_view(LobbyView.CHOOSE)
 	else:
 		get_tree().change_scene_to_file("res://scenes/menu.tscn")
+
+## Colors other members already hold: color_idx -> their name. Members who have not
+## published a color yet hold nothing.
+func _colors_held_by_others() -> Dictionary:
+	var held := {}
+	var l: HLobby = EOSManager.lobby
+	if l == null:
+		return held
+	for m in l.members:
+		if m.product_user_id == HAuth.product_user_id or m.get_attribute(EOSManager.ATTR_COLOR).is_empty():
+			continue
+		held[EOSManager._member_color_idx(m)] = EOSManager._member_display_name(m)
+	return held
+
+## No two players share a color. Members are ranked host first, then lobby order; if a
+## higher-ranked member holds my color I move to the first color nobody holds. Only the
+## lower-ranked player ever moves, so the room converges without flip-flopping.
+func _enforce_unique_color() -> void:
+	var l: HLobby = EOSManager.lobby
+	if l == null:
+		return
+	var ranked: Array = []
+	for m in l.members:
+		if m.is_owner():
+			ranked.push_front(m)
+		else:
+			ranked.push_back(m)
+	var before := {}
+	for m in ranked:
+		if m.product_user_id == HAuth.product_user_id:
+			break
+		if not m.get_attribute(EOSManager.ATTR_COLOR).is_empty():
+			before[EOSManager._member_color_idx(m)] = true
+	if not before.has(GameGlobals.my_color_idx):
+		return
+	var held := _colors_held_by_others()
+	for i in range(GameGlobals.PALETTE.size()):
+		if not held.has(i):
+			_on_color_picked(i)
+			return
+
+## Greys out colors another player already took and selects my swatch.
+func _update_swatches() -> void:
+	var held := _colors_held_by_others()
+	for i in range(_swatches.size()):
+		var taken: bool = held.has(i)
+		_swatches[i].disabled = taken
+		_swatches[i].tooltip_text = ("%s - taken by %s" % [GameGlobals.PALETTE_NAMES[i], held[i]]) if taken else GameGlobals.PALETTE_NAMES[i]
+		_swatches[i].set_pressed_no_signal(i == GameGlobals.my_color_idx)
 
 func _refresh_roster() -> void:
 	if not is_node_ready() or not room_panel.visible:
 		return
+	_enforce_unique_color()
+	_update_swatches()
 
 	if EOSManager.is_host and EOSManager.roster.size() > 0:
 		var lines: Array[String] = []
 		lines.append("[b]Players in Room (%d/%s)[/b]" % [EOSManager.roster.size(), EOSManager.max_members])
 		for entry in EOSManager.roster:
-			var mark := "[color=#4caf50]● Connected[/color]" if entry.connected else "[color=#e57373]○ Offline[/color]"
+			var mark := "[color=#6fbf8e]● Connected[/color]" if entry.connected else "[color=#d23a45]○ Offline[/color]"
 			var who: String = entry.display_name
 			if entry.is_host:
-				who += " [color=#f0a020][HOST][/color]"
+				who += " [color=#c9a45c][HOST][/color]"
 			if entry.puid == EOSManager.get_product_user_id():
 				who += " (You)"
 			var col_html: String = EOSManager.color_for_entry(entry).to_html(false)
@@ -474,7 +480,7 @@ func _refresh_roster() -> void:
 			if name.is_empty():
 				name = member.product_user_id.substr(0, 8)
 			if member.is_owner():
-				name += " [color=#f0a020][HOST][/color]"
+				name += " [color=#c9a45c][HOST][/color]"
 			if member.product_user_id == EOSManager.get_product_user_id():
 				name += " (You)"
 			var col_html: String = EOSManager.member_color(member).to_html(false)

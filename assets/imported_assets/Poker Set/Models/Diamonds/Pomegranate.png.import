@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://k1vsuns1k1b1"
 path.s3tc="res://.godot/imported/Pomegranate.png-0a79aed606e15731b7a611a24ad32376.s3tc.ctex"
+path.etc2="res://.godot/imported/Pomegranate.png-0a79aed606e15731b7a611a24ad32376.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/imported_assets/Poker Set/Models/Diamonds/Pomegranate.png"
-dest_files=["res://.godot/imported/Pomegranate.png-0a79aed606e15731b7a611a24ad32376.s3tc.ctex"]
+dest_files=["res://.godot/imported/Pomegranate.png-0a79aed606e15731b7a611a24ad32376.s3tc.ctex", "res://.godot/imported/Pomegranate.png-0a79aed606e15731b7a611a24ad32376.etc2.ctex"]
 
 [params]
 
