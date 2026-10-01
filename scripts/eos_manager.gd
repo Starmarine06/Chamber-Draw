@@ -113,11 +113,51 @@ const VoiceChat := preload("res://scripts/voice_chat.gd")
 var voice: Node = null
 
 
+var _quitting := false
+
+
 func _ready() -> void:
+	# Closing the window goes through quit_game(): leave the lobby, then really exit.
+	get_tree().set_auto_accept_quit(false)
 	voice = VoiceChat.new()
 	voice.name = "Voice"
 	add_child(voice)
 	HLobbies.local_rtc_options = {"flags": 0, "local_audio_device_input_starts_muted": true}
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		quit_game()
+
+
+## Closes the game for real (window X, EXIT GAME button). The Epic SDK can keep the process
+## alive after the window is gone (open lobby, native threads), so: leave the lobby with a short
+## time limit, quit the tree, and - if the process is STILL there a few seconds later - a tiny
+## detached helper process kills it. No more "ghost" copy of the game in the background.
+func quit_game() -> void:
+	if _quitting:
+		return
+	_quitting = true
+	_start_exit_watchdog()
+	if lobby != null or peer != null:
+		var done := [false]
+		var leave := func() -> void:
+			await leave_lobby()
+			done[0] = true
+		leave.call()
+		var waited := 0.0
+		while not done[0] and waited < 1.5:
+			await get_tree().process_frame
+			waited += get_process_delta_time()
+	get_tree().quit()
+
+
+func _start_exit_watchdog() -> void:
+	var pid := OS.get_process_id()
+	if OS.get_name() == "Windows":
+		OS.create_process("cmd.exe", ["/c", "ping -n 6 127.0.0.1 >nul & taskkill /F /PID %d" % pid])
+	elif OS.has_feature("linuxbsd") or OS.get_name() == "macOS":
+		OS.create_process("/bin/sh", ["-c", "sleep 5; kill -9 %d" % pid])
 
 
 func get_product_user_id() -> String:
