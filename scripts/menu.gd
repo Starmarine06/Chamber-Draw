@@ -43,6 +43,8 @@ func _build_ui() -> void:
 
 	var subtitle := UIStyle.make_label("Every draw could be your last.", 16, UIStyle.MUTED)
 	vbox.add_child(subtitle)
+	var version := UIStyle.make_label("v%s" % str(ProjectSettings.get_setting("application/config/version", "")), 12, UIStyle.MUTED)
+	vbox.add_child(version)
 
 	var rule := ColorRect.new()
 	rule.color = Color(UIStyle.BRASS_DIM, 0.8)
