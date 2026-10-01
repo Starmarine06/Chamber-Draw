@@ -238,7 +238,7 @@ func _on_tutorial() -> void:
 	get_tree().change_scene_to_file("res://scenes/game.tscn")
 
 func _on_quit() -> void:
-	get_tree().quit()
+	EOSManager.quit_game()
 
 func _on_login_state_changed(login_state: String) -> void:
 	match login_state:
