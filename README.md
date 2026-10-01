@@ -1,6 +1,6 @@
 # Chamber Draw
 
-**Every draw could be your last.**  ·  *v1.2.0*
+**Every draw could be your last.**  ·  *v1.5.1*
 
 *A fast, chaotic party card game built in Godot — shed your hand, dodge the bombs, and pray the Chamber misses you.*
 
