@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://jiwb046olpn7"
 path.s3tc="res://.godot/imported/K.png.png-1d8a6daa46c0aa1236b979ded4e38fd0.s3tc.ctex"
+path.etc2="res://.godot/imported/K.png.png-1d8a6daa46c0aa1236b979ded4e38fd0.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/imported_assets/Poker Set/Models/Diamonds/K.png.png"
-dest_files=["res://.godot/imported/K.png.png-1d8a6daa46c0aa1236b979ded4e38fd0.s3tc.ctex"]
+dest_files=["res://.godot/imported/K.png.png-1d8a6daa46c0aa1236b979ded4e38fd0.s3tc.ctex", "res://.godot/imported/K.png.png-1d8a6daa46c0aa1236b979ded4e38fd0.etc2.ctex"]
 
 [params]
 

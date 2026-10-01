@@ -23,6 +23,9 @@ Chamber Draw is a multiplayer shedding card game that mashes the flow of **Uno**
 - **A deck packed with malice.** Swap Hands, Peek (reorder the top 3 — secretly), Choose a Deck (steer an opponent into danger), Rotate Decks (burn the table's reads), the rare Draw Ten hand-flooder, Wild Color, and the villainous Wild Sabotage.
 - **Props, not placeholder UI.** A real 3D poker table with per-seat characters, hand-some animated card flights (deal, draw, discard), a live discard pile that shows the actual top card, procedural night sky, Kenney UI art, and a 30-second turn timer ring tinted to the current player's color.
 - **Full table manners.** Uno-style Jump-In responses, stackable +N draw cards (any value, any color — red +4 on green +2), cross-color Skip/Reverse matching, and a physical turn-order ring so nobody argues who's next.
+- **Table life.** Light a cigarette or pour a drink without leaving your seat: scroll to sip, a bartender walks over to refill your glass, and you can keep playing your cards while he pours. Different drinks hit differently — and drink too much and you **pass out**: your next turn is skipped and you wake up with 3 extra cards (still a little drunk).
+- **Your own color.** Every player picks a seat color; **no two players ever share one**, online or offline. It tints your turn border, timer ring and name tag.
+- **Voice chat (online).** Talk to the table over Epic's lobby voice: push-to-talk or open mic, mute, deafen, volume sliders and per-player mute.
 - **Nobody gets left behind.** This is why games happen again. Stay in it: Extra Life cards bank up to 2 spare lives; respawn cards can drag the last eliminated player back into the fight; and eliminated players become **spectators** watching the table (Uno-privacy — hands stay hidden).
 
 ## How it works
@@ -60,7 +63,8 @@ Forced draws (Draw Two/Four/Ten) are **Bomb-proof** — they only pull safe card
 ## Play it anywhere
 
 - **Offline vs. AI** — brave the Chamber against a table of bots. A full **guided tutorial** walks you through every mechanic before you touch a real match.
-- **Online (host-authoritative)** — lobby up with friends via **Epic Online Services P2P** and play over the internet. The host holds the truth and every client gets a private hand snapshot — hiding hands is built into the protocol. Snap, reconnect-safe, 2–7 players.
+- **Online (host-authoritative)** — lobby up with friends via **Epic Online Services P2P** and play over the internet, with built-in **voice chat** (Epic lobby RTC room). The host holds the truth and every client gets a private hand snapshot — hiding hands is built into the protocol. Snap, reconnect-safe, 2–7 players.
+- **Voice note:** voice needs RTC enabled for your EOS deployment on the Epic Dev Portal; if a lobby can't be created with a voice room, it falls back to a normal lobby without voice.
 
 ### Controls
 
@@ -71,6 +75,12 @@ Forced draws (Draw Two/Four/Ten) are **Bomb-proof** — they only pull safe card
 | **1–9 / 0** | Play hand card by index · stack a Draw card when targeted. |
 | **A / B** | Draw from Deck A / Deck B · pick a forced-draw pile. |
 | **Esc / ❚❚** | Pause (offline). |
+| **S / W** | Smoke / drink (W again while the bartender pours = get your cards back). |
+| **V (hold)** | Voice: push-to-talk. |
+| **M / N** | Voice: mute your mic / deafen. |
+| **Tab** | Free the mouse cursor for clicking UI. |
+
+All keys above except 1–9, Esc and the arrows can be rebound in **Settings → Controls**; voice mode (push-to-talk vs open mic) and volumes live in **Settings → General**.
 
 ## Run it
 
@@ -86,7 +96,7 @@ Fully built out — you can even skip setup:
 
 ## Quality under the hood
 
-- **140 tests · 10 suites · deterministic.** The rule engine (`game_state.gd`) and deck/chamber systems are unit-tested and flake-proof (randomness is pinned in test fixtures), so the math you play is the math that shipped.
+- **176 tests · 11 suites · deterministic.** The rule engine (`game_state.gd`) and deck/chamber systems are unit-tested and flake-proof (randomness is pinned in test fixtures), so the math you play is the math that shipped.
 - **Host-authoritative by design.** The single source of truth on the host; clients send intents, receive snapshots.
 - **Balance levers, not hacks.** Every card count, bomb count, chamber-odds knob, and pile split is a named constant at the top of `card_database.gd`. Tune the lethality without touching logic.
 - Headless parse-clean, editor errors list zeroed.
@@ -102,7 +112,11 @@ scripts/game_state.gd Authoritative rules engine (turn order, chamber, wins)
 scripts/deck_manager.gd  Two-pile Multi-Deck System + chamber deck
 scripts/card_database.gd The full tunable card pool
 scripts/eos_manager.gd   EOS login, lobbies, P2P relay, roster mapping
-tests/test_*.gd       140 deterministic tests across 10 suites
+scripts/voice_chat.gd    Lobby voice: mic modes, push-to-talk, mute/deafen, volumes
+scripts/ui/voice_bar.gd  Voice HUD strip (lobby + in-game)
+scripts/fx/              Procedural vice/duel/room effects (revolver duel, smoking, drinking...)
+assets/                  Art, audio, Kenney packs  (archive/ = unused models, not imported)
+tests/test_*.gd       176 deterministic tests across 11 suites
 ```
 
 For the full design intent — balance levers, tuning curves, art direction, accessibility choices — see **[Chamber_Draw_Game_Design_Doc.md](Chamber_Draw_Game_Design_Doc.md)**.

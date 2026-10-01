@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://64l52pc8ib7j"
 path.s3tc="res://.godot/imported/Pomegranate.png-4d971a21d13f8c4defd0466c8297a9b7.s3tc.ctex"
+path.etc2="res://.godot/imported/Pomegranate.png-4d971a21d13f8c4defd0466c8297a9b7.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/imported_assets/Poker Set/Models/Spades/Pomegranate.png"
-dest_files=["res://.godot/imported/Pomegranate.png-4d971a21d13f8c4defd0466c8297a9b7.s3tc.ctex"]
+dest_files=["res://.godot/imported/Pomegranate.png-4d971a21d13f8c4defd0466c8297a9b7.s3tc.ctex", "res://.godot/imported/Pomegranate.png-4d971a21d13f8c4defd0466c8297a9b7.etc2.ctex"]
 
 [params]
 

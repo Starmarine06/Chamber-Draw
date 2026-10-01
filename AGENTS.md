@@ -11,7 +11,8 @@ Hybrid UI: editor-built 3D table scene + programmatic 2D overlays. 2–7 players
   `CenterCards` marker of `scenes/player_ui.tscn`; opponent seats get a Kenney character
   GLB at their  `PlayerN` marker (lowered onto the felt via `CHAR_SEAT_OFFSET` — the GLB origin is above
   the feet; only the LOCAL hand ever renders — Uno-style privacy).
-  All buttons/panels use the Kenney UI pack textures; sounds from `kenney_ui-pack/Sounds`;
+  All buttons/panels use the noir `UIStyle` autoload (StyleBoxFlat + Kenney Future fonts); sounds are
+  semantic events via the `AudioManager` autoload (Kenney UI blips as fallback);
   **Dealing animation:** at game start, card-back ghosts fly from the deck to each player
   (7 cards per player, staggered 0.08s, accelerating), then the starter card flips onto
   the discard, a random player is selected with a "Player X goes first!" notification,
@@ -335,7 +336,8 @@ See the local file — production values live there, never commit unrelated valu
 - **New helper:** _reveal_hand_tail(hide_count, first_delay = 0.0, step = 0.32) in game.gd (after _animate_forced_draw). Hides the tail hide_count CardNodes (alpha 0, scale 0.6, MOUSE_FILTER_IGNORE), then staggered pop-in tweens (scale?ONE 0.22s, alpha?1 0.18s, restore MOUSE_FILTER_STOP). Uses create_tween().bind_node(cn) -> if a later _refresh_hand frees the nodes, the tweens die safely and new hand nodes render normally.
 - **Sync:** ghosts land at ~0.43 + i*0.32 (forced draw) / ~0.3 (single voluntary draw), so call sites use _reveal_hand_tail(count, 0.43, 0.32) or _reveal_hand_tail(1, 0.3).
 - **Wiring (all staged AFTER the final _check_turn()/_refresh_all(), because _check_turn rebuilds hand nodes in most branches and would free the staged tweens):
-  - _on_deck_clicked FORCED_DRAW_DECK_CHOICE branch -> capture d_count := game.pending_forced_draw_count BEFORE esolve_forced_draw (it zeroes the count), then reveal after _check_turn().
+  - _on_deck_clicked FORCED_DRAW_DECK_CHOICE branch -> capture d_count := game.pending_forced_draw_count BEFORE 
+esolve_forced_draw (it zeroes the count), then reveal after _check_turn().
   - _on_turn_timer_expired forced-draw forfeit -> same capture-first pattern; reveal after _check_turn() when is_human.
   - _on_turn_timer_expired generic 4-card penalty -> humans previously got NO ghost (_fly_draw_to_hand(pile_id, null) no-ops on null card); now _animate_forced_draw(pile_id, idx, 2) for everyone, count penalty_drawn, reveal after _check_turn() when human.
   - _process_ai_turn draw-attack -> when draw_target == own_index (AI stacks a Draw card onto the human), reveal after _animate_forced_draw.
@@ -452,3 +454,309 @@ See the local file — production values live there, never commit unrelated valu
   (correct fallback). All edited scripts + `game.tscn`/`player_ui.tscn`/`menu.tscn` parse clean
   (`PARSE_CHECK_RESULT failed=0`). Full 140-test suite still needs a run in the editor
   (scan first — disk edits versus stale editor cache).
+
+### Noir-casino presentation overhaul (design / animation / audio)
+- **Autoloads** (project.godot, after GameGlobals): `Settings` (user://settings.cfg:
+  volumes, fullscreen, reduced_motion, anim_speed, shake_strength; `commit()` saves +
+  emits `changed`), `AudioManager` (runtime buses Master→Music/SFX/UI, 12-player pool,
+  semantic `play(&"event")`, loops, music crossfade + `duck()/unduck()`).
+- **Never reference new autoloads by global name** (the running editor doesn't learn
+  them until restart and may even drop them when it re-saves project.godot → "Identifier
+  not declared" floods). Instead: `UIStyle` is a STATIC library
+  (`const UIStyle := preload("res://scripts/ui_style.gd")`: palette INK/SMOKE/BRASS/BLOOD/
+  FELT/CREAM, Kenney fonts, `install()` applies the root Theme once — called in menu/lobby/
+  game `_ready`, `make_button(text, &"primary|secondary|danger|confirm")`, `make_tinted_button`,
+  `make_swatch`, `make_color_button`, `panel_style`, and `audio()`/`settings()` which return
+  /root/AudioManager|Settings, CREATING them if the autoload is missing). Sound goes through
+  the static facade `const Sound := preload("res://scripts/sound.gd")` (`Sound.play/
+  play_music/duck/unduck/play_loop/stop_loop`, via `.call` on the node).
+- **Audio drop-in:** `assets/audio/README.md` is the manifest. Files named
+  `assets/audio/sfx/<event>[_N].ogg|wav|mp3` and `assets/audio/music/{menu,table}.ogg`
+  are auto-discovered (`ResourceLoader.list_directory`). Missing → Kenney fallback / silence.
+  game.gd `_sfx(&"event")` replaced all `_play_sfx(_sfx_*)` players (removed).
+- **Cards** (`card_node.gd`): procedural noir faces (rounded cream stock, muted suit panel
+  `CardNode.SUIT_COLORS`, tilted oval, mirrored corner index, 6/9 underline), revolver-
+  cylinder back, pulsing brass playable glow, hover lift/scale (tween killed before
+  restart), `set_dimmed`, `set_selected`, `shake_invalid`, `place(pos, rot, dur)` glide,
+  optional `face_texture` art hook. `setup()` resets scale/modulate/mouse_filter (pool reuse).
+- **Hand** (`_refresh_hand`): nodes reused IN SLOT ORDER so cards glide; `card_clicked`
+  connected once (fixed the pre-existing "already connected" spam); unplayable cards dim
+  on your turn; hand hidden during deal phase 0, pops in after.
+- **FX modules** (preloaded consts, no class_name — avoids global-class-cache staleness):
+  `scripts/fx/juice.gd` (`fly_arc` Bézier flights, `flip_card`, `punch`, `flash`, `burst`
+  particle presets sparks/confetti/smoke/muzzle/gold/ember, `d()` anim-speed scaling),
+  `scripts/fx/screen_shake.gd` (trauma shake of the game root + camera h/v offset;
+  zero under reduced motion), `scripts/fx/chamber_cylinder.gd` (drawn revolver cylinder,
+  `spin()`, `chamber_passed` signal, `reveal(kind)`).
+- **game.gd juice:** arc flights w/ landing sparks + discard bump; AI/remote plays now
+  fly to the discard (`_detect_remote_plays` diff of hand sizes + top card); deal = arcing
+  backs, starter flips onto pile, decelerating "goes first" roulette; smoked-band banners;
+  real shake; last-10s timer ticks; framed popups; toast notifications; color chip +
+  direction arrow in top bar; VICTORY/GAME OVER panel + confetti + camera orbit.
+- **Chamber** rebuilt: vignette shader (`shaders/vignette.gdshader`) keeps the table
+  visible, heartbeat loop + red rim pulse, music duck, camera FOV push-in, cylinder spin
+  → hammer → silence → result (LIVE: flash + muzzle + max shake + victim `die`; BLANK:
+  smoke; BACKFIRE; LUCKY: gold). Same ~3.8s + 2.5s timing; online clients build the
+  overlay with a short spin inside `_play_chamber_reveal`.
+- **3D:** ink background + AgX + glow + fog, warm `SpotLight3D` table lamp w/ shadows,
+  cool moon fill, dust motes; `shaders/poker_table.gdshader` recolors the single-surface
+  table (felt + brass betting ring / leather rail / wood); deck slabs with rendered
+  card-back tops, thickness tracks count, brass emissive on your turn; discard top gets a
+  random twist; Label3D uses Kenney font + outline. Renderer is **Mobile** (no SSAO /
+  volumetric fog).
+- **Characters** (`scripts/character_actor.gd`): cached per seat (no more free/rebuild
+  each refresh), drives GLB clips (idle loop, interact, emote-yes/no, die), seat-color
+  rim light, Kenney emote bubbles; `_character_react(seat, kind)` kinds play/hit/nervous/
+  relief/win/die/respawn; eliminated seats play `die` then fade.
+- **Menu/lobby:** `scripts/noir_background.gd` + `shaders/smoke_bg.gdshader`, UIStyle
+  widgets, SETTINGS button (`scripts/settings_panel.gd`, also in pause overlay).
+  Gotcha: `set_anchors_preset()` on a node ALREADY in the tree keeps zero offsets → use
+  `set_anchors_and_offsets_preset()`. `get_meta(key, null)` errors — guard with `has_meta`.
+- **FIXED pre-existing AI stall:** in `_process_ai_turn` everything after the forced-draw
+  `return` was indented inside that `if`, so offline AI never played/drew (only timed out).
+  Dedented one level.
+- **Known, not changed:** an idle human forced-draw target never times out
+  (`timer_active` excludes FORCED_DRAW_DECK_CHOICE); `test_card.gd`
+  `test_draw_cards_color_locked_in_normal_play` fails against the committed rules (pre-existing).
+- **Tests:** new `tests/test_presentation.gd` (12 tests) + parse gate for all new scripts.
+  Fresh-process run: 158/159 (only the pre-existing card-rule failure).
+
+### Vice emotes (smoking + whiskey) — player and AI
+- **3D rig** (`scripts/fx/emote_rig.gd`): Kenney chars are rigid-part (torso/arm-*/head
+  quaternion tracks, identity rest; right shoulder (-0.4,1.1,-0.1) torso-space, head at
+  (0,1.2,0) scale 0.1, faces +Z). `install_clips()` adds AnimationLibrary "emotes" with
+  `smoke` (3.4s: arm to lips, head lifts) and `drink` (2.9s: arm up, head tips back, the
+  `Glass` node tips via its own rotation track). Track paths come from the idle clip
+  (`part_path`), so every character letter works. Props: cigarette under the head
+  (`PropRoot` scale 10×CIG_SCALE cancels the head's 0.1; ember emissive + TipLight + wisp
+  particles), tumbler under arm-right (GLASS_SCALE, liquid pivot scale.y = level), `exhale()`
+  one-shot cloud. Props exist hidden from setup so track paths always resolve.
+- **CharacterActor.do_emote(&"smoke"|&"drink")** → busy-guarded; ember flares on the
+  drag, exhale on the way down, cigarette smoulders ~3.5s then is flicked away; glass pops
+  in, drains, pops out. Chamber reactions: `nervous` → smoke, `relief` → drink after 1.2s.
+- **Local player** (no avatar) — see "First-person vice" below (the 2D overlay version was
+  replaced by a 3D one).
+- **game.gd:** SMOKE [S] / WHISKEY [W] buttons bottom-right (`ViceRow`, grows leftward) +
+  keys S/W (work even while spectating; blocked while paused), `EMOTE_COOLDOWN` 3.6s.
+  `_request_emote` → `_play_emote(seat, kind)`; online: client `rpc_id(1,
+  "_rpc_emote_request")` → host plays + `rpc("_rpc_emote", seat, kind)` to all (receivers
+  skip their own seat). Offline AIs: `_process_ai_vices` gives each AI a 14–34s timer
+  (not on their own turn, not during deal/chamber/tutorial).
+- New audio events: `lighter`, `inhale`, `exhale`, `gulp`, `glass_clink` (README manifest).
+- Tests: presentation suite +3 (arm aim, head tilt, UIStyle works with no autoload);
+  parse gate covers sound.gd / emote_rig.gd / vice_first_person.gd. Editor run 161/162.
+
+### First-person 3D vice, UI director, chamber-odds gauges
+- **First-person vice** (`scripts/fx/vice_first_person.gd`): the seat camera IS the eyes.
+  Sequence (`game._play_own_vice`): cards FLIP face-down, the fan drops, and a face-down
+  stack of real card backs lands on the felt in front of the seat (`_spawn_set_down_pile`,
+  camera ray → table plane); THEN a blocky Kenney fist (`EmoteRig.build_fist`, sleeve = seat
+  color) brings the 3D cigarette / tumbler (`build_cigarette` / `build_glass`) to the mouth
+  (bottom-center, just below the view); THEN the stack lifts and the fan rises + flips face-up.
+  Head motion = camera pitch offsets from a captured rest pitch (meta `vice_rest_pitch`):
+  smoke dips -5° on the drag, tips back +7° on the exhale; drink tips back +10°. Placement is
+  screen-relative (`_at(fx, fy, depth)`), so it frames the same at any FOV/aspect. Exhale
+  particles are reparented to the world so they outlive the rig. `_hands_busy` locks card
+  plays / deck draws during the whole sequence; own vice blocked during deal/chamber/game over.
+- **UI director** (game.gd): fixed layers `LAYER_HUD 0 < TOAST 30 < MODAL 50 < BANNER 90 <
+  CHAMBER 100 < GAME_OVER 120 < PAUSE 200`. `_play_center_banner` now QUEUES
+  (`_banner_queue`, pumped each frame by `_pump_banners`); banners wait while
+  `_banner_blocked()` (a decision popup / chamber / deal roulette / pause) and are dropped
+  when older than `BANNER_MAX_AGE_MS`. Every decision popup (`_frame_overlay_popup`, jump-in,
+  bomb vote, diffuse) calls `_cut_banner()` first → announcement, then choice, never both.
+  The Chamber and game over call `_clear_stage()` (queue + banner + roulette + popups).
+  Jump-in prompt is now a framed UIStyle panel on the modal layer.
+- **Chamber odds** (`scripts/ui/deck_gauge.gd`): 2D gauges pinned to each deck (beside the
+  pile when it's high on screen, above it when low; clamped under the top bar) show deck
+  name, risk-colored % (felt→brass→ember→blood), card count and a mini cylinder whose loaded
+  chambers track risk. Replaces the buried 3D "N cards • M% chamber" labels. Glow while you
+  may draw, punch when odds change, hidden at game over. Kenney Future's "%" glyph reads
+  like an X — draw "%" with `ThemeDB.fallback_font` (gauge + settings values).
+- **Logic fixes:** forced-draw target is now on the clock (`timer_active` includes
+  FORCED_DRAW_DECK_CHOICE for the local target, with a fresh `_reset_turn_timer()`), so an
+  idle target forfeits instead of stalling; the "Dealing cards..." toast is cleared when
+  the deal ends; AI shows an `emote_dots3` "thinking" bubble while deciding; opponent name
+  labels lifted above heads (`_char_scale * 3.05`).
+- `UIStyle._service()` adds fallback nodes with `add_child.call_deferred` (root is busy during
+  scene `_ready`) and caches them.
+- Tests: presentation +2 (gauge rounds/colors), parse gate + deck_gauge. Editor run 163/164.
+
+### Native-resolution 3D + always-fullscreen + 2D seat tags
+- **Always fullscreen:** `project.godot` `[display] window/size/mode=3` (borderless
+  fullscreen) and `Settings.apply_display()` forces it at startup; the Fullscreen checkbox
+  was removed. UI design size stays 1152x648 (`canvas_items` stretch keeps text crisp).
+- **3D at native pixels:** the SubViewportContainer was replaced by a full-rect
+  `TextureRect` (`_viewport_container`) showing `_viewport_3d`, which is sized every frame
+  to `get_window().size` (`_render_size()`) with MSAA 4x + FXAA + 8x aniso. Because the
+  render (e.g. 1920x1080) and the UI canvas (1152x648) now differ, ALWAYS convert with
+  `_unproject(world)` (camera.unproject_position × `_view_scale()`) — never call
+  `camera.unproject_position` directly for UI placement; for rays divide the canvas point by
+  `_view_scale()`. (Also removed the old "Can't change the size of a SubViewport" warning.)
+- Table card textures (discard + deck backs) render at 256x384 (pixel_size = w / 256).
+- **Opponent name tags are 2D** (`_seat_tags`, `_update_seat_tag` / `_layout_seat_tag`):
+  pinned to each opponent's chest (above-head 3D labels were off-screen with the close seat
+  cameras), seat-colored, cards + ♥lives, brass border + ▶ on the active seat, OUT when
+  eliminated; re-laid-out after the gauges move and hop above any gauge they'd overlap.
+- AI "thinking" bubble moved beside the head and shrunk (`character_actor.emote`).
+- **Fixed: popup frame covering its own buttons** (user screenshot "the issue with the
+  player picker.png" — "Force next draw for..." after the color picker): `_frame_overlay_popup`
+  did `overlay.move_child(frame, overlay_vbox.get_index())`; on the 2nd popup in a row the
+  frame was already before the vbox, so that move pushed it AFTER (on top of) the vbox. Now
+  `overlay.move_child(frame, 0)` — the frame is always the overlay's bottom-most child.
+
+### Interactive cigarette (scroll to drag, burns down, pack + lighter)
+- `scripts/fx/first_person_smoke.gd` (Node3D rig under the seat camera) replaces the canned
+  first-person smoke. `game._play_own_vice(&"smoke")` → cards set down → `FirstPersonSmoke.start()`;
+  toast "SCROLL to take a drag · [S] to put it out". `game._input` routes mouse-wheel ticks
+  (and trackpad `InputEventPanGesture`) to `session.inhale()`; S/SMOKE again → `finish()`;
+  5s idle after an exhale → puts it away; Chamber / game over → `_force_end_vice()` → `abort()`.
+- **Pulls:** each tick = `BURN_PER_PULL` (0.028 ≈ 36 pulls/cigarette) of tobacco + drag
+  intensity; hand to the lips, ember flares, camera dips; no tick for `EXHALE_AFTER` (0.5s)
+  → exhale with a plume/head-tilt scaled by the drag; a tick during an exhale interrupts it.
+- **Persistence:** `static var burn` (0 fresh … 1 at the filter) survives between smokes
+  in a session run. The paper body scales with the remaining tobacco; ash cap, ember, tip
+  light and wisps ride the tip (`_apply_burn`). At the filter: ember dies, the butt is
+  flicked away, then the hand leaves; the NEXT smoke (or the first ever, burn starts at 1.0)
+  pulls a new one from a pack (`_make_pack`) and lights it with a brass lighter
+  (`_light_it`: second fist, hinged lid, flame + halo + light placed exactly at the tip
+  via `to_local(_ember.global_position)`), followed by a first exhale.
+- New sounds: `lighter` (open/strike), `lighter_close`, `pack`. AI characters keep the canned
+  `emotes/smoke` clip. Tests: presentation +2 (pulls per cigarette, burn range) + parse gate.
+
+### Whiskey on the table, procedural audio + music, Choose Deck rule change
+- **Interactive whiskey** (`scripts/fx/first_person_drink.gd`, mirrors the cigarette): W →
+  cards down → `FirstPersonDrink.start(camera, sleeve, _table_glass, _felt_point_at(0.7,0.74), done)`.
+  If `game._table_glass` exists the hand reaches down and lifts it (world→hand reparent,
+  keeping the pose); else a glass comes in. Scroll = `sip()` (`SIP_PER_TICK` 0.05 ≈ 20 sips;
+  lips + head back, gulps, ice); no tick for 0.6s → lowers. Level persists (`static var level`).
+  Empty → `_refill()`: green bottle tips over the glass, amber stream, level → 0.9. W again /
+  5s idle → set down on the felt (glass re-parented to the 3D world, upright, and handed back
+  via `done(glass)` → `_table_glass`). `abort()` (Chamber / game over) places it instantly.
+  `game._input` routes scroll to whichever session is open. `_felt_point_at(frac)` = camera
+  ray → table plane for any screen fraction.
+- **Procedural SFX** (`scripts/fx/sfx_synth.gd`): ice (clustered glassy ticks), glass_clink,
+  pour (glug-modulated filtered noise), gulp (pitch drop), inhale/exhale (breath noise +
+  crackle), heartbeat (loopable lub-dub). AudioManager uses these for any event without a
+  file in assets/audio/sfx/ — BEFORE the Kenney fallback. New events: `ice`, `pour`.
+- **Procedural music** (`scripts/fx/music_synth.gd`): noir lounge loops — "table" (84 bpm,
+  Am9/Dm9/Fmaj9/E7b9, Rhodes comping, walking bass, brushes/ride/kick, vibes phrase) and
+  "menu" (66 bpm, no drums). `AudioManager.play_music(track)`: real file in
+  assets/audio/music/ wins; else cached `user://music_<track>_v1.wav`; else rendered on a
+  WorkerThreadPool task (~2 s table / ~7 s menu), saved via `save_to_wav`, then crossfaded in
+  (`_start_music_stream`). Bump the `_v1` cache key if you change the synth.
+- **Choose Deck (rule change, user request):** the player picks a victim, the deck AND the
+  color (NONE-color → color popup first, as before); `game_state` `choose_deck` now calls
+  `_forced_draw(target, 1, chosen_pile)` (immediate, bomb-safe like other forced draws) and
+  sets `players[target].skip_next_turn = true`. It no longer writes `forced_pile_for_player`
+  (the dictionary/consumer remain but are unused by this card). UI prompts/notification/
+  tutorial text updated; human + AI plays animate the victim's draw. Test
+  `test_play_choose_deck_makes_target_draw_and_skip` replaces the old forced-pile test.
+- Tests: +3 presentation (synth sounds, note math, sips per glass) + parse gate. 168/169
+  (only the pre-existing card-rule test). The editor may run the FIRST pass after a disk
+  edit against a stale script — re-run before trusting a single failure.
+
+### Jump-in rules + game-over buttons
+- **Jump-in continues from the jumper** (`game_state.jump_in`): `current_index = jumper`
+  BEFORE the card resolves, so Skip/Reverse/+N act from the jumper's seat and
+  `advance_turn()` moves to the seat after them. Everyone passed over
+  (`_players_between(prev_current, jumper)`) has their pending `skip_next_turn` voided, and
+  the jumper's own skip is cleared.
+- **Jumping in on a +N adds to the pile** (`_stack_jump_in_draw`): when a forced draw is
+  pending, a jumped Draw Two/Four/Ten does `pending_forced_draw_count += amount`, releases
+  the previous target's skip, and re-targets the seat after the jumper (never resets).
+- Tests: `test_jump_in_turn_continues_from_jumper`, `test_jump_in_on_draw_two_adds_to_pile`;
+  `test_play_choose_deck_makes_target_draw_and_skip` now pins `direction = 1` (with -1 the
+  victim is next and the skip is consumed immediately — correct, but the flag reads false).
+- **Game over:** "Play Again" (`_on_play_again`) = offline/tutorial `reload_current_scene()`
+  (same GameGlobals settings); online → back to lobby.tscn still in the room (lobby `_ready`
+  shows HOSTING/WAITING when `EOSManager.lobby != null`). "Main Menu" (`_on_main_menu`, also
+  the pause menu) leaves the lobby and loads menu.tscn. Online replay is untested.
+
+### Tutorial rebuilt (7 chapters, coach panel, spotlight)
+- `scripts/tutorial_director.gd` rewritten; UI in `scripts/ui/tutorial_coach.gd`.
+  Opens with a chapter picker (Start from the top, or any of: 1 Basics, 2 Action Cards,
+  3 Draw Attacks, 4 Bombs & the Chamber, 5 Jump-In, 6 Table Life, 7 Endgame). The blocking
+  full-screen popup is gone: a docked coach panel (chapter/step/progress bar, title,
+  BBCode body with [key]/[bad]/[good] shorthands, CONTINUE or pulsing "YOUR MOVE", EXIT)
+  narrates while the table stays visible; Enter/Space = Continue. A spotlight ring + bouncing
+  arrow tracks the exact thing to click (`_t_hand/_t_deck/_t_both_decks/_t_gauge/_t_seat/
+  _t_node/_t_vice/_t_glass`), and the panel auto-docks right when it would cover the target.
+  `_say()` = info step; `_task()` = action step (caller unlocks input, awaits the event);
+  `_cheer()` = stamp + gold burst on success.
+- Covers every current rule: Choose a Deck (victim draws + skip, you pick color), odds gauges
+  (a lesson with a risky Deck A vs clean Deck B), stacking any +N, jump-in continues from the
+  jumper, jump-in on +N adds to the pile, the 30s timer + keyboard shortcuts, smoking (pack +
+  lighter, scroll drags, burn-down) and whiskey (scroll sips, glass stays on table, refill),
+  Last Shot / Overcharge / Respawn / Vote / both modes.
+- game.gd hooks: `_tut_allow_vice` gates S/W in the tutorial; emits `vice_start` / `vice_end`
+  tutorial events. `_seed()` also calls `_force_end_vice()` and clears the toast.
+- Draw-attack boards use `dir = -1` so Zed (seat 3) targets YOU (ring [0,3,1,2]).
+- Verified by an automated bot that plays all 58 steps start→finish and lands on menu.tscn.
+
+### 3D revolver duel (Chamber rebuilt in 3D)
+- **Rule:** when a bomb goes to the chamber, a RANDOM living player other than the drawer (`game._pick_shooter`)
+  points a revolver at the drawer. Result semantics are unchanged (LIVE / BLANK / BACKFIRE / LUCKY_DRAW apply
+  to the drawer in `game_state`); the shooter is presentation-only. Host picks the shooter and sends it as
+  `chamber_reveal.shooter`; EVERY client (and a host watching a remote seat) now plays the same duel
+  (previously only the victim's client saw the overlay).
+- **`scripts/fx/revolver_duel.gd`** (Node3D, preloaded const, no class_name): procedural revolver mesh (steel
+  frame, brass, walnut grip w/ seat-color inlay, spinning six-shot drum, cocking hammer). Awaited API:
+  `intro()` (camera swings to frame, spotlight on victim, shooter turns + arm out, gun twirls in) → `spin(revs,dur)`
+  → `cock()` → `fire(&"live"|&"blank"|&"backfire"|&"lucky")` → `finish()`. Signals: `chamber_click`, `sfx`,
+  `shake`, `screen_flash`, `victim_hit`. LIVE = muzzle flash/light/ring/sparks/smoke, recoil, bullet-time
+  (`Engine.time_scale` 0.2, real-time timer, restored in `_exit_tree`/`finish`) tracer, blood mist, knockback.
+  BACKFIRE = drum blows out, gun flies from the hand. BLANK = dry click + embers. LUCKY = gold burst + "LUCKY!" label.
+  Shooter/victim avatar = null means the LOCAL player: first-person fist+gun (screen-relative like
+  `vice_first_person`) or barrel pointed down the camera.
+- **CharacterActor:** `aim_at/aim_recoil/aim_release/knockback`, react kind `&"fear"` (tremble + sweat),
+  `removing` flag (die_and_remove is idempotent). **EmoteRig** clips `emotes/aim` + `emotes/recoil`
+  (`HAND_AIM`, `AIM_HOLD`). **SfxSynth** now synthesizes gunshot / cylinder_click / cylinder_spin (ratchet) /
+  hammer_cock / blank / backfire (beat the Kenney fallbacks).
+- **game.gd:** the 2D `ChamberCylinder` is no longer used (file kept). `_build_chamber_ui(victim, shooter)`
+  keeps title/status up top + verdict at the bottom so the 3D stage is visible. `_duel_seat` stops
+  `_place_opponents_3d` from removing the victim's avatar before the bullet lands.
+- **Verified:** headless parse clean; headless smoke test ran all 4 outcomes x 3 avatar combos
+  (AI/AI, local shooter, local victim) with no script errors. NOT visually verified — tune gun size
+  (`AI_GUN_MULT`, `FP_GUN_SCREEN`), hand offset (`EmoteRig.HAND_AIM`) and effect sizes by eye. Online untested.
+
+### Multiplayer hardening + room/crowd + vices + mouse look (latest)
+- **Online fixes:** every EOS lobby call has a 12s timeout (`_await_timeout`); failed create/join tears down fully; host heartbeat (40s) keeps/rebuilds the room; start RPC is re-sent until each client's "hello"; snapshots are zstd-compressed and sent as <=800B chunks (`_send_snapshot_to`/`_rpc_snapshot_chunk`) because EOS P2P packets max out ~1170B; `get_seat_for_peer` re-binds by puid. Host pause freezes everyone (`_rpc_set_paused`); a client's pause is a personal menu. Leaving: 1v1 -> popup (Online Screen / Main Menu); 3+ -> host chooses Continue (`GameState.drop_player`) or End for everyone. Log viewer (L) is offline-only unless launched with `--chamber-log`.
+- **Room:** `fx/room_builder.gd` (octagon room, `shaders/room_wall.gdshader`) + `fx/room_crowd.gd` (bartender, patrons, pairs, walkers; Kenney clips). Table grown 1.3x, seats pushed 1.5x (`_grow_table`). Deck badges and player tags are billboard Sprite3Ds fed by SubViewports (3D-tagged, not screen UI).
+- **Vices:** `vice_catalog.gd` (fictional cigarette/cigar/12 drink types + brands), `ui/vice_picker.gd` (S / W open the picker), `fx/glassware.gd`, `fx/ashtray.gd` (lit smoke rests in the ashtray; butts pile up). Hands rebuilt in `EmoteRig.build_fist` (fist/wrist/cuff/sleeve) and the camera near plane is pulled in during vices. Drinking builds `_drunk` (sway/ghosting in `shaders/wired.gdshader`); secret [C] tray scene (`fx/first_person_line.gd`) hides the UI (`_show_ui_cover`), scroll moves the straw, high lasts 15 of YOUR card plays.
+- **Mouse look:** cursor captured while nothing needs it (`_look_active`), TAB frees it; scroll selects a card, click plays it or draws from the deck under the crosshair, right-click clears. Look yaw/pitch is sent (`_rpc_look` -> `_rpc_look_state`, unreliable) and drives `CharacterActor.set_look` (applied after the AnimationPlayer via `mixer_updated`). Disabled in the tutorial.
+- **Controls:** `scripts/keybinds.gd` (static, saved to user://keybinds.cfg) holds the rebindable actions (draw A/B, end turn, smoke, drink, change brand, free cursor, hidden tray key) + mouse sensitivity; the Settings panel has a CONTROLS section (click a key, press the new one; conflicts unbind the other action; Reset). game.gd reads keys only through `Keybinds.matches(event, &"action")`. Hand cards 1-9, arrows, Esc and L are fixed. The tray scene drops the head steeply over the tray (`fx/first_person_line.gd`), and drag/sip/tray head tilt is included in the synced look pitch so other players see it.
+- **Net rewrite/fixes (latest):** seats are told explicitly (`your_seat` in the start RPC, `you` in every snapshot) - clients never infer their seat from ids. `_rpc_intent` wraps `_process_intent` (host self-calls arrive with sender id 0 -> seat 0) and refreshes the host's own screen after every remote action. Intents: hello, play, draw (turn continues like offline), **end_turn**, **timeout**, diffuse, forced_draw, last_shot, jump_in. Clients never mutate their render-only GameState (turn-timer expiry sends `timeout`). `_drew_marker` + snapshot `drew` restore the End Turn button on clients. Character GLB letter uses `posmod` (seat 0 crashed the client). Leaving: `_on_main_menu` awaits `leave_lobby()`; `_on_kicked` in a match raises `host_lost_in_game`. EOSManager.VERSION gates joins (bump on RPC/snapshot changes).
+- **Two-process network tests (no EOS, ENet on localhost):** `godot --headless -s tests/net_host.gd` then, in a second shell, `godot --headless -s tests/net_client.gd`. Uses `EOSManager.debug_enet_host/client/start` and `tests/net_bot.gd` (autopilot). Watch for divergent `cur=`/hands between the HOST and CLIENT lines.
+
+### Voice chat, passing out, kill-the-high, repo cleanup
+- **Voice chat (EOS lobby RTC room):** `EOSManager._create_lobby_inner` now creates the lobby with
+  `enable_rtc_room = true` (members join muted: `local_audio_device_input_starts_muted`); if that create fails
+  it retries once WITHOUT voice so playing never depends on RTC being enabled for the deployment.
+  `EOSManager.voice` (child node, `scripts/voice_chat.gd`) decides every frame whether the mic is live:
+  `joined AND NOT muted AND NOT deafened AND (open mic OR push-to-talk held)` and calls
+  `RTCAudio.update_sending` only on change (3s timeout, re-sent after (re)joining a room). Settings are static
+  + saved to `user://voice.cfg` (mode, mic_muted, output/mic gain 0..2 where 1.0 = EOS volume 50). Keys
+  (rebindable, Controls tab): V push-to-talk (hold), M mute mic, N deafen. UI: `scripts/ui/voice_bar.gd`
+  (lobby room panel + in-game top-left; status button, DEAFEN, OPEN MIC/PUSH TO TALK, PLAYERS menu with
+  per-player local mute, "🔊 who's talking"); Settings → GENERAL has VOICE CHAT (mode + voice/mic volume).
+  Hidden when the lobby has no connected RTC room. `EOSManager.VERSION` bumped to "6". NOT tested against
+  live EOS (needs two machines + Dev Portal RTC); PTT/mic reads `Input.is_key_pressed`, ignored while a LineEdit has focus.
+- **Passing out:** drinking to `_drunk >= PASS_OUT_AT (1.0)` makes the local player request
+  `GameState.pass_out(seat)` (intent `"pass_out"` online; refused during forced draw / bomb / last shot /
+  jump-in window, client retries each second). It ends their turn if it is theirs, sets `passed_out` +
+  `skip_next_turn`; when that skip is consumed (`_wake_if_passed_out`) they wake with
+  `PASS_OUT_PENALTY` (3) forced-draw cards, and the client resets `_drunk = WAKE_DRUNK (0.3)` (still a bit drunk).
+  Sleepers can't jump in; a sleeping forced-draw target gets a random deck. Local: black cover + all
+  input locked (`_own_passed_out()`); others see the avatar slump (`CharacterActor.set_passed_out`) and
+  "💤 ASLEEP" on the seat tag. `passed_out` rides snapshots. Offline AIs never drink.
+- **Kill the high:** key K (rebindable "End the high") or pause menu → "End the high" calls `_kill_high()`
+  (2.5s comedown instead of 15 plays); also cancels the tray scene. Blacking out ends a high too.
+- **Cleanup:** loose weapon models/textures moved out of the project root — `shotgun.*` (was used by the
+  revolver duel) → `assets/models/weapons/`; the unreferenced rest → `archive/unused_models/` (has a
+  `.gdignore`, so Godot neither imports nor exports it; export preset is `all_resources`, so this also
+  shrinks builds). Removed Blender `.blend1` backups (now gitignored) and a 550-byte stub zip; `next prompt.txt`
+  → `docs/`. Removed dead code: game.gd `_show_action_notification/_show_skip_notification/_add_table_label/
+  _felt_point_at/_do_screen_shake/_base_camera_transform`, `LOOK_SENS`; card_node `_draw_ellipse/_ellipse_points/STOCK*`;
+  first_person_drink `_make_bottle/_spawn_waiter/_finish_pour_now`; tutorial `_t_deck`; `FALLBACK_GLB`.
+- Tests added: 4 pass-out tests in `test_game_state.gd`, parse gate for voice scripts (editor run still needed;
+  the logic was verified headless with a throwaway scene).

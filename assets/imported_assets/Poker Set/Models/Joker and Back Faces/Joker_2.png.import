@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://dsh00rr5qcqia"
 path.s3tc="res://.godot/imported/Joker_2.png-a67db6e5814e1a02b1722ac1f6661614.s3tc.ctex"
+path.etc2="res://.godot/imported/Joker_2.png-a67db6e5814e1a02b1722ac1f6661614.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/imported_assets/Poker Set/Models/Joker and Back Faces/Joker_2.png"
-dest_files=["res://.godot/imported/Joker_2.png-a67db6e5814e1a02b1722ac1f6661614.s3tc.ctex"]
+dest_files=["res://.godot/imported/Joker_2.png-a67db6e5814e1a02b1722ac1f6661614.s3tc.ctex", "res://.godot/imported/Joker_2.png-a67db6e5814e1a02b1722ac1f6661614.etc2.ctex"]
 
 [params]
 

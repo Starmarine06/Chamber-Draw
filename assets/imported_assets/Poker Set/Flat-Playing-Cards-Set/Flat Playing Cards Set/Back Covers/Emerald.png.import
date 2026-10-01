@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://dlk8brdj3ugxv"
 path.s3tc="res://.godot/imported/Emerald.png-ee016eeaee92250f4d50b6b42e3e5fa9.s3tc.ctex"
+path.etc2="res://.godot/imported/Emerald.png-ee016eeaee92250f4d50b6b42e3e5fa9.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/imported_assets/Poker Set/Flat-Playing-Cards-Set/Flat Playing Cards Set/Back Covers/Emerald.png"
-dest_files=["res://.godot/imported/Emerald.png-ee016eeaee92250f4d50b6b42e3e5fa9.s3tc.ctex"]
+dest_files=["res://.godot/imported/Emerald.png-ee016eeaee92250f4d50b6b42e3e5fa9.s3tc.ctex", "res://.godot/imported/Emerald.png-ee016eeaee92250f4d50b6b42e3e5fa9.etc2.ctex"]
 
 [params]
 

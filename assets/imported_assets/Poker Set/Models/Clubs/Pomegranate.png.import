@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://cypnmucmhdokx"
 path.s3tc="res://.godot/imported/Pomegranate.png-d0c03ca6df2adbb9edbed7956bde7393.s3tc.ctex"
+path.etc2="res://.godot/imported/Pomegranate.png-d0c03ca6df2adbb9edbed7956bde7393.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/imported_assets/Poker Set/Models/Clubs/Pomegranate.png"
-dest_files=["res://.godot/imported/Pomegranate.png-d0c03ca6df2adbb9edbed7956bde7393.s3tc.ctex"]
+dest_files=["res://.godot/imported/Pomegranate.png-d0c03ca6df2adbb9edbed7956bde7393.s3tc.ctex", "res://.godot/imported/Pomegranate.png-d0c03ca6df2adbb9edbed7956bde7393.etc2.ctex"]
 
 [params]
 

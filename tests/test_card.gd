@@ -58,9 +58,9 @@ func test_draw_cards_color_locked_in_normal_play() -> void:
 	assert_false(red_draw_two.matches(Card.CardColor.GREEN, -1, "draw_two"), "red +2 not playable on green +2")
 	# Same color +N still matches.
 	assert_true(red_draw_two.matches(Card.CardColor.RED, -1, "draw_two"), "red +2 matches red +2")
-	# Same-color different +N value does NOT match (no free stacking outside forced draws).
+	# A different +N value in the SAME color is an ordinary color match (red on red is always legal).
 	var red_draw_four := CardDatabase._make(Card.CardType.ACTION, Card.CardColor.RED, -1, "draw_four", "RED Draw Four")
-	assert_false(red_draw_four.matches(Card.CardColor.RED, -1, "draw_two"), "red +4 not playable on red +2")
+	assert_true(red_draw_four.matches(Card.CardColor.RED, -1, "draw_two"), "red +4 plays on a red card by color")
 
 
 func test_action_card_matches_own_action_with_empty_active() -> void:

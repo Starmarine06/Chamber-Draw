@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://cvki45jtwx1c8"
 path.s3tc="res://.godot/imported/Sun Flower.png-86c77fedbaf86f3465fd759aaf963736.s3tc.ctex"
+path.etc2="res://.godot/imported/Sun Flower.png-86c77fedbaf86f3465fd759aaf963736.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/imported_assets/Poker Set/Models/Joker and Back Faces/Sun Flower.png"
-dest_files=["res://.godot/imported/Sun Flower.png-86c77fedbaf86f3465fd759aaf963736.s3tc.ctex"]
+dest_files=["res://.godot/imported/Sun Flower.png-86c77fedbaf86f3465fd759aaf963736.s3tc.ctex", "res://.godot/imported/Sun Flower.png-86c77fedbaf86f3465fd759aaf963736.etc2.ctex"]
 
 [params]
 

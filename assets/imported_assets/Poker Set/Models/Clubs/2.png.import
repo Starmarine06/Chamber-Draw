@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://btu2snct4pfb7"
 path.s3tc="res://.godot/imported/2.png-a118d2003da8f33e5f90d805f5e54730.s3tc.ctex"
+path.etc2="res://.godot/imported/2.png-a118d2003da8f33e5f90d805f5e54730.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/imported_assets/Poker Set/Models/Clubs/2.png"
-dest_files=["res://.godot/imported/2.png-a118d2003da8f33e5f90d805f5e54730.s3tc.ctex"]
+dest_files=["res://.godot/imported/2.png-a118d2003da8f33e5f90d805f5e54730.s3tc.ctex", "res://.godot/imported/2.png-a118d2003da8f33e5f90d805f5e54730.etc2.ctex"]
 
 [params]
 

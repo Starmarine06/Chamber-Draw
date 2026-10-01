@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://42iblkda36b3"
 path.s3tc="res://.godot/imported/Peter River.png-bbe15f100768570ab87b7a57f2ca7732.s3tc.ctex"
+path.etc2="res://.godot/imported/Peter River.png-bbe15f100768570ab87b7a57f2ca7732.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/imported_assets/Poker Set/Models/Joker and Back Faces/Peter River.png"
-dest_files=["res://.godot/imported/Peter River.png-bbe15f100768570ab87b7a57f2ca7732.s3tc.ctex"]
+dest_files=["res://.godot/imported/Peter River.png-bbe15f100768570ab87b7a57f2ca7732.s3tc.ctex", "res://.godot/imported/Peter River.png-bbe15f100768570ab87b7a57f2ca7732.etc2.ctex"]
 
 [params]
 
