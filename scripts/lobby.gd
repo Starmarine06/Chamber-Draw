@@ -191,13 +191,13 @@ func _build_ui() -> void:
 	mode_button = _make_button("MODE: Shedding Race", &"secondary", -1, 38)
 	mode_button.add_theme_font_size_override("font_size", 16)
 	mode_button.pressed.connect(func():
-		session_mode = (session_mode + 1) % 2
-		mode_button.text = "MODE: Shedding Race" if session_mode == 0 else "MODE: Last One Standing"
+		session_mode = 1 - session_mode
+		mode_button.text = "MODE: Shedding Race" if session_mode == 0 else "MODE: Texas Hold'em"
 	)
 	room_panel.add_child(mode_button)
 
 	mode_label_client = Label.new()
-	mode_label_client.text = "MODE: Shedding Race"
+	mode_label_client.text = "MODE: chosen by the host"
 	mode_label_client.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	mode_label_client.add_theme_font_size_override("font_size", 15)
 	mode_label_client.add_theme_color_override("font_color", UIStyle.MUTED)

@@ -21,6 +21,10 @@ var reduced_motion: bool = false
 var anim_speed: float = 1.0
 ## 0..1 strength of camera/screen shake.
 var shake_strength: float = 1.0
+## Hold'em: show your hand name and the suggested move under the table.
+var poker_hints: bool = true
+## Hold'em: show the hand-rankings list on the right.
+var poker_rankings: bool = true
 
 func _ready() -> void:
 	load_settings()
@@ -37,6 +41,8 @@ func load_settings(path: String = SAVE_PATH) -> void:
 	reduced_motion = bool(cfg.get_value("motion", "reduced", reduced_motion))
 	anim_speed = clampf(float(cfg.get_value("motion", "anim_speed", anim_speed)), 0.5, 2.0)
 	shake_strength = clampf(float(cfg.get_value("motion", "shake", shake_strength)), 0.0, 1.0)
+	poker_hints = bool(cfg.get_value("gameplay", "poker_hints", poker_hints))
+	poker_rankings = bool(cfg.get_value("gameplay", "poker_rankings", poker_rankings))
 
 func save_settings(path: String = SAVE_PATH) -> void:
 	var cfg := ConfigFile.new()
@@ -48,6 +54,8 @@ func save_settings(path: String = SAVE_PATH) -> void:
 	cfg.set_value("motion", "reduced", reduced_motion)
 	cfg.set_value("motion", "anim_speed", anim_speed)
 	cfg.set_value("motion", "shake", shake_strength)
+	cfg.set_value("gameplay", "poker_hints", poker_hints)
+	cfg.set_value("gameplay", "poker_rankings", poker_rankings)
 	cfg.save(path)
 
 ## Call after changing any field: persists, re-applies display, notifies.

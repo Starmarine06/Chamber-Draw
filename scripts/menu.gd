@@ -6,7 +6,7 @@ const Sound := preload("res://scripts/sound.gd")
 ## then loads either offline (vs AI) or online (EOS multiplayer lobby).
 
 var num_players: int = 4
-var game_mode: int = 0  # 0 = Shedding Race, 1 = Last One Standing
+var game_mode: int = 0  # 0 = Chamber Draw (Shedding Race), 1 = Texas Hold'em
 
 var player_count_label: Label
 var mode_label: Label
@@ -85,7 +85,7 @@ func _build_ui() -> void:
 	vbox.add_child(mode_row)
 
 	var btn_prev := UIStyle.make_button("◀", &"secondary", Vector2(50, 42), 18)
-	btn_prev.pressed.connect(func(): game_mode = (game_mode + 1) % 2; _refresh())
+	btn_prev.pressed.connect(func(): game_mode = 1 - game_mode; _refresh())
 	mode_row.add_child(btn_prev)
 
 	mode_label = UIStyle.make_label("Shedding Race", 20, UIStyle.CREAM, true)
@@ -93,7 +93,7 @@ func _build_ui() -> void:
 	mode_row.add_child(mode_label)
 
 	var btn_next := UIStyle.make_button("▶", &"secondary", Vector2(50, 42), 18)
-	btn_next.pressed.connect(func(): game_mode = (game_mode + 1) % 2; _refresh())
+	btn_next.pressed.connect(func(): game_mode = 1 - game_mode; _refresh())
 	mode_row.add_child(btn_next)
 
 	mode_desc = UIStyle.make_label("First to empty hand wins. No elimination.", 14, UIStyle.MUTED)
@@ -192,12 +192,15 @@ func _refresh() -> void:
 	if player_count_label:
 		player_count_label.text = str(num_players)
 	if mode_label:
-		mode_label.text = "Shedding Race" if game_mode == 0 else "Last One Standing"
+		mode_label.text = "Shedding Race" if game_mode == 0 else "Texas Hold'em"
 		if mode_desc:
 			if game_mode == 0:
 				mode_desc.text = "First to empty hand wins. Live = penalty cards + skipped turn."
 			else:
-				mode_desc.text = "Last player alive wins. Live = elimination."
+				mode_desc.text = "Classic poker with a beginner coach and hand rankings built in. Offline vs bots or online with friends."
+
+func _scene_for_mode() -> String:
+	return "res://scenes/poker.tscn" if game_mode == 1 else "res://scenes/game.tscn"
 
 func _on_offline() -> void:
 	var globals := get_node_or_null("/root/GameGlobals")
@@ -206,7 +209,7 @@ func _on_offline() -> void:
 		globals.game_mode = game_mode
 		globals.is_online = false
 		globals.is_tutorial = false
-	get_tree().change_scene_to_file("res://scenes/game.tscn")
+	get_tree().change_scene_to_file(_scene_for_mode())
 
 func _on_online() -> void:
 	var globals := get_node_or_null("/root/GameGlobals")
@@ -231,11 +234,11 @@ func _on_online() -> void:
 func _on_tutorial() -> void:
 	var globals := get_node_or_null("/root/GameGlobals")
 	if globals:
-		globals.num_players = 4
-		globals.game_mode = 0
+		globals.num_players = 4 if game_mode == 0 else 2
+		globals.game_mode = game_mode
 		globals.is_online = false
 		globals.is_tutorial = true
-	get_tree().change_scene_to_file("res://scenes/game.tscn")
+	get_tree().change_scene_to_file(_scene_for_mode())
 
 func _on_quit() -> void:
 	EOSManager.quit_game()

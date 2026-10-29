@@ -16,6 +16,7 @@ var _listening: StringName = &""          # action waiting for its new key
 var _key_buttons: Dictionary = {}          # action id -> Button
 var _note: Label
 var _general_box: VBoxContainer
+var _general_scroll: ScrollContainer
 var _controls_box: VBoxContainer
 var _tab_general_btn: Button
 var _tab_controls_btn: Button
@@ -58,9 +59,14 @@ func _ready() -> void:
 	v.add_child(_divider())
 
 	# ── GENERAL tab ──
+	_general_scroll = ScrollContainer.new()
+	_general_scroll.custom_minimum_size = Vector2(0, 330)
+	_general_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(_general_scroll)
 	_general_box = VBoxContainer.new()
+	_general_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_general_box.add_theme_constant_override("separation", 10)
-	v.add_child(_general_box)
+	_general_scroll.add_child(_general_box)
 	_general_box.add_child(UIStyle.make_caption("AUDIO"))
 	_general_box.add_child(_slider_row("Master", "master_volume", 0.0, 1.0))
 	_general_box.add_child(_slider_row("Music", "music_volume", 0.0, 1.0))
@@ -76,6 +82,10 @@ func _ready() -> void:
 	_general_box.add_child(_check_row("Reduced motion (no shake / flashes)", "reduced_motion"))
 	_general_box.add_child(_slider_row("Screen shake", "shake_strength", 0.0, 1.0))
 	_general_box.add_child(_slider_row("Animation speed", "anim_speed", 0.75, 1.5))
+	_general_box.add_child(_divider())
+	_general_box.add_child(UIStyle.make_caption("TEXAS HOLD'EM"))
+	_general_box.add_child(_check_row("Hints (hand name + suggested move)", "poker_hints"))
+	_general_box.add_child(_check_row("Hand rankings list", "poker_rankings"))
 
 	# ── CONTROLS tab ──
 	_controls_box = VBoxContainer.new()
@@ -84,7 +94,7 @@ func _ready() -> void:
 	v.add_child(_controls_box)
 	_controls_box.add_child(UIStyle.make_caption("CLICK A KEY, THEN PRESS THE NEW ONE"))
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 300)
+	scroll.custom_minimum_size = Vector2(0, 330)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_controls_box.add_child(scroll)
 	var rows := VBoxContainer.new()
@@ -130,7 +140,7 @@ func _ready() -> void:
 func _show_tab(controls: bool) -> void:
 	_listening = &""
 	_refresh_keys()
-	_general_box.visible = not controls
+	_general_scroll.visible = not controls
 	_controls_box.visible = controls
 	# The active tab is drawn as the primary button.
 	var g := UIStyle.make_button("", &"primary" if not controls else &"secondary", Vector2(1, 1), 14)

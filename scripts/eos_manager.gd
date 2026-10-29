@@ -45,7 +45,7 @@ const ATTR_COLOR := "COLOR"
 const ATTR_HEARTBEAT := "HB"
 ## Bump whenever RPCs / snapshot format change: mismatched builds silently misroute RPCs
 ## (everything looks broken for the older one), so joining a different version is refused.
-const VERSION := "7"
+const VERSION := "8"
 
 const HOST_PEER_ID := 1
 
@@ -437,6 +437,11 @@ func _join_lobby_inner(code: String) -> bool:
 
 ## Host-only. Freeze the seat roster, push config to every client, then the
 ## lobby UI switches to the game scene. Clients auto-switch on _rpc_game_started.
+## Which game scene a session mode loads (0 = Chamber Draw, 1 = Texas Hold'em).
+static func scene_for_mode(mode: int) -> String:
+	return "res://scenes/poker.tscn" if mode == 1 else "res://scenes/game.tscn"
+
+
 func host_start_game(mode: int) -> bool:
 	if not is_host or not lobby:
 		return false
@@ -506,7 +511,8 @@ func _resend_start_until_loaded(config: Dictionary) -> void:
 @rpc("any_peer", "call_local", "reliable")
 func _rpc_game_started(config: Dictionary) -> void:
 	var current := get_tree().current_scene
-	if current != null and current.scene_file_path == "res://scenes/game.tscn":
+	var target := scene_for_mode(int(config.mode))
+	if current != null and current.scene_file_path == target:
 		return  # duplicate (re-sent) start while already in the game
 	_config = config
 	GameGlobals.is_online = true
@@ -518,7 +524,7 @@ func _rpc_game_started(config: Dictionary) -> void:
 	_my_seat = int(config.get("your_seat", -1))
 	GameGlobals.own_seat = get_own_seat()
 
-	get_tree().change_scene_to_file("res://scenes/game.tscn")
+	get_tree().change_scene_to_file(target)
 
 #endregion
 
@@ -809,7 +815,7 @@ func debug_start(mode: int) -> void:
 		var cfg := config.duplicate(true)
 		cfg["your_seat"] = entry.seat
 		rpc_id(entry.peer_id, "_rpc_game_started", cfg)
-	get_tree().change_scene_to_file("res://scenes/game.tscn")
+	get_tree().change_scene_to_file(scene_for_mode(mode))
 
 #endregion
 
