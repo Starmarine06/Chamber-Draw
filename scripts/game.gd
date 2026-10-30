@@ -119,6 +119,9 @@ var _look_pitch := 0.0
 var _look_base := Vector3.ZERO
 var _look_base_cam: Camera3D = null
 var _look_base_fov := 0.0
+const ZOOM_MAX := 0.45               # fraction of fov removed at full zoom
+var _zoom := 0.0                     # Ctrl+scroll target, 0..1
+var _zoom_cur := 0.0                 # smoothed zoom currently baked into the camera fov
 var _cursor_free := false           # TAB: give the cursor back for clicking UI
 var _hand_sel := -1                 # scroll-wheel selected card (-1 = none)
 var _look_sync_t := 0.0
@@ -4467,6 +4470,10 @@ func _handle_look_input(event: InputEvent) -> bool:
 		var smoking := _smoke_session != null and is_instance_valid(_smoke_session)
 		var drinking := _drinking_active()
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			if mb.ctrl_pressed:
+				_zoom = clampf(_zoom + (0.15 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else -0.15), 0.0, 1.0)
+				get_viewport().set_input_as_handled()
+				return true
 			if smoking or drinking:
 				return false  # scroll belongs to the cigarette / glass
 			_scroll_hand(-1 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1)
@@ -4483,6 +4490,25 @@ func _handle_look_input(event: InputEvent) -> bool:
 			get_viewport().set_input_as_handled()
 			return true
 	return false
+
+## Hold Z or Ctrl+scroll to narrow the field of view. Applied as a ratio on the live fov so it
+## composes with the other fov effects; skipped while they own the camera.
+func _update_zoom(delta: float) -> void:
+	if _camera_3d == null or not is_instance_valid(_camera_3d):
+		return
+	var busy := _paused or _wired_active or _chamber_cam_fov > 0.0 \
+		or (_smoke_session != null and is_instance_valid(_smoke_session)) \
+		or _drinking_active() or (_line_scene != null and is_instance_valid(_line_scene))
+	var want := 0.0 if busy else (1.0 if Input.is_key_pressed(KEY_Z) else _zoom)
+	var cur := _zoom_cur
+	cur = lerpf(cur, want, 1.0 - exp(-delta * 9.0))
+	if absf(cur - want) < 0.002:
+		cur = want
+	var old_f := 1.0 - ZOOM_MAX * _zoom_cur
+	var new_f := 1.0 - ZOOM_MAX * cur
+	if absf(new_f - old_f) > 0.00001:
+		_camera_3d.fov *= new_f / old_f
+	_zoom_cur = cur
 
 func _scroll_hand(dir: int) -> void:
 	if card_nodes.is_empty() or _hands_busy:
@@ -4604,6 +4630,7 @@ func _update_mouse_look(delta: float) -> void:
 		_camera_3d.rotation.y = _look_base.y + deg_to_rad(_look_yaw)
 		if _camera_3d.has_meta(&"vice_rest_pitch"):
 			_camera_3d.set_meta(&"vice_rest_pitch", rest_x)
+	_update_zoom(delta)
 	# Selection follows hand changes.
 	if _hand_sel >= card_nodes.size():
 		_hand_sel = card_nodes.size() - 1

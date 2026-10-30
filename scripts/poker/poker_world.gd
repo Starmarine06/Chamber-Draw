@@ -13,6 +13,7 @@ const CardView := preload("res://scripts/poker/poker_card_view.gd")
 const Juice := preload("res://scripts/fx/juice.gd")
 const EmoteRig := preload("res://scripts/fx/emote_rig.gd")
 const Bank := preload("res://scripts/poker/poker_chipbank.gd")
+const DealerLook := preload("res://scripts/poker/dealer_look.gd")
 
 const TABLE_GROW := 1.45
 const SEAT_PUSH := 1.62
@@ -62,6 +63,8 @@ var _pending_nodes: Array = []
 var _pending_sig: String = ""
 var ring_node: MeshInstance3D
 var _hover_d: int = 0
+const HOLE_GROW := 1.5       # your hole cards are drawn larger so they read from your seat
+const OPP_HOLE_GROW := 1.2
 const DENOMS: Array = [1, 5, 25, 100, 500]
 const MAX_TOWER := 10
 const MAX_TOWERS_PER_DENOM := 2
@@ -173,7 +176,9 @@ func _build_world() -> void:
 
 	_build_racetrack_table()
 	_build_hangers()
-	_build_hang_tray()
+	for ts in range(n_seats):
+		_build_hang_tray(ts)
+	_build_pot_marker()
 	_build_clean_floor()
 
 	camera = Camera3D.new()
@@ -226,15 +231,20 @@ func _layout_seats() -> void:
 			cum.append(cum[i - 1] + pts[i].distance_to(pts[i - 1]))
 	var total: float = cum[samples]
 	var gap_len := 1.5
-	var delta: float = (total - gap_len) / float(n_seats)
 	var gap_after: int = int(ceil(float(n_seats) / 2.0)) - 1
+	# The gap is centred on the far side of the table (opposite seat 0); the seats on each side of it
+	# are spread evenly with half a step of margin against the gap.
+	var sa: float = total * 0.5 - gap_len * 0.5
+	var sb: float = total * 0.5 + gap_len * 0.5
+	var n_a: int = gap_after + 1
+	var n_b: int = n_seats - n_a
+	var step_a: float = sa / (float(n_a) - 0.5)
+	var step_b: float = (total - sb) / (float(n_b) + 0.5)
 	for i in range(n_seats):
-		var s: float = float(i) * delta + (gap_len if i > gap_after else 0.0)
+		var s: float = float(i) * step_a if i < n_a else sb + (float(i - n_a) + 0.5) * step_b
 		var q := _at_len(pts, cum, s)
 		_seat_pts.append(Vector3(q.x, surface_y, q.y))
-	var sa := float(gap_after) * delta
-	var sb := float(gap_after + 1) * delta + gap_len
-	var d := _at_len(pts, cum, (sa + sb) * 0.5)
+	var d := _at_len(pts, cum, total * 0.5)
 	dealer_pt = Vector3(d.x, surface_y, d.y)
 	var to_d := Vector3(dealer_pt.x - center.x, 0.0, dealer_pt.z - center.z)
 	dealer_dir = to_d.normalized() if to_d.length() > 0.001 else Vector3(0, 0, -1)
@@ -571,12 +581,13 @@ func _flat_basis(fwd: Vector3) -> Basis:
 func hole_transform(seat: int, k: int) -> Transform3D:
 	var fwd := forward_of(seat)
 	var right := right_of(seat)
-	var side: float = (-0.56 if k == 0 else 0.56) * card_w
+	var grow: float = HOLE_GROW if seat == 0 else OPP_HOLE_GROW
+	var side: float = (-0.56 if k == 0 else 0.56) * card_w * grow
 	var yaw := atan2(-fwd.x, -fwd.z)
-	var depth := 0.30 if seat == 0 else 0.27
+	var depth := 0.33 if seat == 0 else 0.27
 	var pos := felt_pt(seat, depth, side * (1.1 if seat == 0 else 1.0))
 	pos.y += 0.006
-	return Transform3D(Basis(Vector3.UP, yaw + (0.07 if k == 0 else -0.07)) * Basis(Vector3.RIGHT, -PI / 2.0), pos)
+	return Transform3D((Basis(Vector3.UP, yaw + (0.07 if k == 0 else -0.07)) * Basis(Vector3.RIGHT, -PI / 2.0)).scaled(Vector3.ONE * grow), pos)
 
 ## Where a contender's hole cards go at showdown: slid forward onto the felt in front of them, face up.
 func show_transform(seat: int, k: int) -> Transform3D:
@@ -591,7 +602,7 @@ func peek_transform(k: int) -> Transform3D:
 	var rest := hole_transform(0, k)
 	var fwd := forward_of(0)
 	var yaw := atan2(-fwd.x, -fwd.z)
-	var b := Basis(Vector3.UP, yaw + (0.09 if k == 0 else -0.09)) * Basis(Vector3.RIGHT, -PI / 2.0 + 1.0)
+	var b := (Basis(Vector3.UP, yaw + (0.09 if k == 0 else -0.09)) * Basis(Vector3.RIGHT, -PI / 2.0 + 1.0)).scaled(Vector3.ONE * HOLE_GROW)
 	return Transform3D(b, rest.origin - fwd * card_h * 0.18 + Vector3(0, card_h * 0.42, 0))
 
 ## Look at your cards: they turn face up in place (a little lift mid-turn) and turn back when you let go.
@@ -627,14 +638,13 @@ func deal_card(node: Node3D, target: Transform3D, dur: float = 0.34, delay: floa
 		if not is_instance_valid(node):
 			return
 		var flip: float = node.get_meta(&"flip", 1.0)
-		node.position = start.lerp(target.origin, t) + Vector3(0, sin(t * PI) * card_h * 0.4, 0)
-		node.basis = Basis(Vector3.UP, spin * pow(1.0 - t, 2.0)) * base * Basis(Vector3.UP, PI * flip)
+		node.position = start.lerp(target.origin, t) + Vector3(0, sin(minf(t * 1.25, 1.0) * PI) * card_h * 0.16, 0)
+		node.basis = Basis(Vector3.UP, spin * pow(1.0 - t, 3.0)) * base * Basis(Vector3.UP, PI * flip)
 	var tw := node.create_tween()
 	if delay > 0.0:
 		tw.tween_interval(delay)
-	tw.tween_method(step, 0.0, 1.0, dur).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_property(node, "position:y", target.origin.y + card_h * 0.05, 0.05)
-	tw.tween_property(node, "position:y", target.origin.y, 0.07)
+	tw.tween_method(step, 0.0, 1.0, dur).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(node, "position:y", target.origin.y, 0.04)
 
 ## Winning cards rise off the felt a little (and settle back with the next hand).
 func lift_card(node: Node3D, up: bool) -> void:
@@ -654,9 +664,9 @@ func flash_card(node: Node3D) -> void:
 func board_transform(k: int) -> Transform3D:
 	var fwd := forward_of(0)
 	var right := right_of(0)
-	var grow := 1.25   # community cards are drawn larger so they read from across the table
-	var gap := card_w * 0.16 * grow
-	var pos := Vector3(center.x, surface_y + 0.006, center.z) + fwd * 0.10 + right * (float(k) - 2.0) * (card_w * grow + gap)
+	var grow := 1.65   # community cards are drawn big and sit in front of the pot so every one reads, river included
+	var gap := card_w * 0.14 * grow
+	var pos := Vector3(center.x, surface_y + 0.006, center.z) - fwd * 0.12 + right * (float(k) - 2.0) * (card_w * grow + gap)
 	return Transform3D(_flat_basis(fwd).scaled(Vector3.ONE * grow), pos)
 
 func bet_pos(seat: int) -> Vector3:
@@ -664,6 +674,20 @@ func bet_pos(seat: int) -> Vector3:
 		return inside_felt(ring_point() - right_of(0) * 0.23, 0.05)
 	var p := felt_pt(seat, 0.36, 0.26)
 	return Vector3(p.x, surface_y, p.z)
+
+## A brass ring inlaid in the felt marks where the pot lives.
+func _build_pot_marker() -> void:
+	var m := MeshInstance3D.new()
+	var t := TorusMesh.new()
+	t.inner_radius = 0.17
+	t.outer_radius = 0.185
+	t.rings = 48
+	t.ring_segments = 6
+	m.mesh = t
+	m.material_override = TableBuilder._metal(TableBuilder.BRASS, 0.35)
+	m.scale = Vector3(1.0, 0.04, 1.0)
+	viewport.add_child(m)
+	m.position = pot_pos() + Vector3(0, 0.002, 0)
 
 func pot_pos() -> Vector3:
 	return Vector3(center.x, surface_y, center.z) + forward_of(0) * 0.40
@@ -1075,6 +1099,16 @@ func look_angles_to(point: Vector3) -> Vector2:
 	var pitch_t := atan2(d.y, flat)
 	return Vector2(rad_to_deg(wrapf(yaw_t - _base_rot.y, -PI, PI)), rad_to_deg(pitch_t - _base_rot.x))
 
+## Zoom 0..1 narrows the field of view (up to ~45%) so the board and cards read from your seat.
+func set_zoom(z: float) -> void:
+	if camera == null:
+		return
+	var f: float = 58.0 * (1.0 - 0.45 * clampf(z, 0.0, 1.0))
+	if absf(f - _base_fov) < 0.01:
+		return
+	_base_fov = f
+	camera.fov = f
+
 func punch_fov(amount: float = 7.0) -> void:
 	if camera == null:
 		return
@@ -1134,27 +1168,34 @@ class ChipFace extends Control:
 	func _draw() -> void:
 		var c := size * 0.5
 		var r := size.x * 0.5
+		var gold := Color("e8c468")
 		draw_circle(c, r, base)
-		# Edge spots
-		for i in range(8):
-			var a := TAU * float(i) / 8.0
-			var p0 := c + Vector2(cos(a - 0.17), sin(a - 0.17)) * r * 0.97
-			var p1 := c + Vector2(cos(a + 0.17), sin(a + 0.17)) * r * 0.97
-			var p2 := c + Vector2(cos(a + 0.17), sin(a + 0.17)) * r * 0.78
-			var p3 := c + Vector2(cos(a - 0.17), sin(a - 0.17)) * r * 0.78
-			draw_colored_polygon(PackedVector2Array([p0, p1, p2, p3]), accent)
-		draw_arc(c, r * 0.72, 0, TAU, 48, accent, r * 0.035)
-		draw_circle(c, r * 0.66, base.darkened(0.12))
-		draw_circle(c, r * 0.6, base)
-		draw_arc(c, r * 0.6, 0, TAU, 48, Color(accent, 0.7), r * 0.02)
-		var font := ThemeDB.fallback_font
+		draw_arc(c, r * 0.985, 0, TAU, 64, gold, r * 0.035)
+		# Six wedge-shaped edge spots, one per chamber of the revolver drum.
+		for i in range(6):
+			var a := TAU * float(i) / 6.0 + 0.2
+			var pts := PackedVector2Array()
+			for s in range(7):
+				var aa := a - 0.30 + 0.60 * float(s) / 6.0
+				pts.append(c + Vector2(cos(aa), sin(aa)) * r * 0.95)
+			for s in range(6, -1, -1):
+				var aa2 := a - 0.22 + 0.44 * float(s) / 6.0
+				pts.append(c + Vector2(cos(aa2), sin(aa2)) * r * 0.76)
+			draw_colored_polygon(pts, accent)
+		draw_arc(c, r * 0.72, 0, TAU, 64, gold, r * 0.03)
+		# Inner disc with a ring of six small "chambers" and a dark medallion for the value.
+		draw_circle(c, r * 0.68, base.darkened(0.18))
+		draw_circle(c, r * 0.64, base)
+		for i in range(6):
+			var a2 := TAU * float(i) / 6.0 + 0.2 + PI / 6.0
+			draw_circle(c + Vector2(cos(a2), sin(a2)) * r * 0.55, r * 0.045, Color(gold, 0.9))
+		draw_circle(c, r * 0.44, Color(0.04, 0.035, 0.05))
+		draw_arc(c, r * 0.44, 0, TAU, 48, gold, r * 0.03)
+		var font: Font = UIStyle.title_font()
 		var txt := str(value)
-		var fs := int(r * (0.78 if txt.length() < 3 else 0.6))
+		var fs := int(r * (0.52 if txt.length() < 3 else 0.38))
 		var w := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_CENTER, -1, fs).x
-		var txt_col := accent if base.get_luminance() < 0.5 else Color("1a1a1f")
-		if value == 1:
-			txt_col = Color("1a1a1f")
-		draw_string(font, Vector2(c.x - w * 0.5, c.y + fs * 0.33), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, txt_col)
+		draw_string(font, Vector2(c.x - w * 0.5, c.y + fs * 0.36), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("f6e7b8"))
 
 func chip_color(d: int) -> Color:
 	for x in CHIP_DENOMS:
@@ -1196,8 +1237,8 @@ func _chip_mesh(d: int) -> ArrayMesh:
 				img.set_pixel(x, y, accent)
 	var side := StandardMaterial3D.new()
 	side.albedo_texture = ImageTexture.create_from_image(img)
-	side.roughness = 0.4
-	side.metallic = 0.1
+	side.roughness = 0.3
+	side.metallic = 0.2
 	side.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, cyl.get_mesh_arrays())
@@ -1242,8 +1283,13 @@ func _chip_mesh(d: int) -> ArrayMesh:
 	_chip_face_vp[d] = vp
 	var top := StandardMaterial3D.new()
 	top.albedo_texture = vp.get_texture()
-	top.roughness = 0.35
-	top.metallic = 0.1
+	top.roughness = 0.22
+	top.metallic = 0.25
+	top.clearcoat_enabled = true
+	top.clearcoat = 0.8
+	top.emission_enabled = true
+	top.emission_texture = vp.get_texture()
+	top.emission_energy_multiplier = 0.18
 	top.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mesh.surface_set_material(1, top)
 	_chip_mesh_cache[d] = mesh
@@ -1260,7 +1306,8 @@ func _column(d: int, count: int) -> Node3D:
 	for k in range(mini(count, MAX_TOWER)):
 		var chip := _chip_node(d)
 		chip.position.y = h * 0.5 + k * h * 1.04
-		chip.rotation.y = randf() * TAU
+		# Chips are scattered, but the top one always faces you so its value reads.
+		chip.rotation.y = 0.0 if k == mini(count, MAX_TOWER) - 1 else randf() * TAU
 		root.add_child(chip)
 	return root
 
@@ -1288,44 +1335,9 @@ func _spawn_dealer() -> void:
 	dealer_actor = actor
 	_dress_dealer(actor)
 
-## A bow tie and a green visor so the dealer reads as the house at a glance.
+## The house dealer's costume lives in dealer_look.gd.
 func _dress_dealer(actor: Node3D) -> void:
-	var model: Node3D = actor.get("model")
-	if model == null:
-		return
-	var red := StandardMaterial3D.new()
-	red.albedo_color = Color("9e1b2a")
-	red.roughness = 0.6
-	var green := StandardMaterial3D.new()
-	green.albedo_color = Color("2a8a52")
-	green.roughness = 0.5
-	var tie := Node3D.new()
-	tie.position = Vector3(0.0, 1.03, 0.13)
-	for sgn in [-1.0, 1.0]:
-		var wing := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = Vector3(0.11, 0.07, 0.035)
-		wing.mesh = bm
-		wing.material_override = red
-		wing.position = Vector3(0.07 * sgn, 0.0, 0.0)
-		wing.rotation_degrees.z = 18.0 * sgn
-		tie.add_child(wing)
-	var knot := MeshInstance3D.new()
-	var kb := BoxMesh.new()
-	kb.size = Vector3(0.05, 0.05, 0.04)
-	knot.mesh = kb
-	knot.material_override = red
-	tie.add_child(knot)
-	model.add_child(tie)
-	var head := model.find_child("head", true, false) as Node3D
-	if head != null:
-		var visor := MeshInstance3D.new()
-		var vb := BoxMesh.new()
-		vb.size = Vector3(3.6, 0.35, 2.6)
-		visor.mesh = vb
-		visor.material_override = green
-		visor.position = Vector3(0.0, 2.7, -0.6)
-		head.add_child(visor)
+	DealerLook.dress(actor)
 
 func dealer_gesture() -> void:
 	if dealer_actor != null and is_instance_valid(dealer_actor):
@@ -1335,41 +1347,96 @@ func dealer_gesture() -> void:
 func set_dealer_button(seat: int) -> void:
 	if _button == null:
 		_button = Node3D.new()
-		var puck := MeshInstance3D.new()
-		var cyl := CylinderMesh.new()
-		cyl.top_radius = card_w * 0.34
-		cyl.bottom_radius = card_w * 0.34
-		cyl.height = 0.012
-		cyl.radial_segments = 32
-		puck.mesh = cyl
-		var pm := StandardMaterial3D.new()
-		pm.albedo_color = Color("f1e8d4")
-		pm.roughness = 0.35
-		puck.material_override = pm
-		_button.add_child(puck)
-		var rim := MeshInstance3D.new()
-		var rc := CylinderMesh.new()
-		rc.top_radius = card_w * 0.36
-		rc.bottom_radius = card_w * 0.36
-		rc.height = 0.006
-		rim.mesh = rc
-		var rm := StandardMaterial3D.new()
-		rm.albedo_color = Color("c9a45c")
-		rm.metallic = 0.8
-		rm.roughness = 0.3
-		rim.material_override = rm
-		rim.position.y = -0.002
-		_button.add_child(rim)
+		var r := card_w * 0.44
+		var ivory := StandardMaterial3D.new()
+		ivory.albedo_color = Color("f4ecd8")
+		ivory.roughness = 0.25
+		ivory.clearcoat_enabled = true
+		ivory.clearcoat = 0.8
+		var brass := TableBuilder._metal(TableBuilder.BRASS, 0.25)
+		# Brass body with a raised ivory face, an inlaid brass ring and a reeded edge.
+		var body := MeshInstance3D.new()
+		var bc := CylinderMesh.new()
+		bc.top_radius = r
+		bc.bottom_radius = r * 0.97
+		bc.height = 0.016
+		bc.radial_segments = 48
+		body.mesh = bc
+		body.material_override = brass
+		_button.add_child(body)
+		var face := MeshInstance3D.new()
+		var fc := CylinderMesh.new()
+		fc.top_radius = r * 0.84
+		fc.bottom_radius = r * 0.86
+		fc.height = 0.006
+		fc.radial_segments = 48
+		face.mesh = fc
+		face.material_override = ivory
+		face.position.y = 0.010
+		_button.add_child(face)
+		var inlay := MeshInstance3D.new()
+		var tm := TorusMesh.new()
+		tm.inner_radius = r * 0.66
+		tm.outer_radius = r * 0.72
+		tm.rings = 48
+		tm.ring_segments = 6
+		inlay.mesh = tm
+		inlay.material_override = brass
+		inlay.scale = Vector3(1.0, 0.12, 1.0)
+		inlay.position.y = 0.0135
+		_button.add_child(inlay)
+		var glow := StandardMaterial3D.new()
+		glow.albedo_color = Color("e8c468")
+		glow.emission_enabled = true
+		glow.emission = Color("ffb02e")
+		glow.emission_energy_multiplier = 1.6
+		inlay.material_override = glow
+		var medal := MeshInstance3D.new()
+		var mc := CylinderMesh.new()
+		mc.top_radius = r * 0.5
+		mc.bottom_radius = r * 0.5
+		mc.height = 0.004
+		mc.radial_segments = 40
+		medal.mesh = mc
+		medal.material_override = _mat_dark()
+		medal.position.y = 0.0145
+		_button.add_child(medal)
+		var lamp := OmniLight3D.new()
+		lamp.light_color = Color("ffb02e")
+		lamp.light_energy = 0.35
+		lamp.omni_range = 0.4
+		lamp.position.y = 0.05
+		_button.add_child(lamp)
+		for k in range(24):
+			var notch := MeshInstance3D.new()
+			var nb := BoxMesh.new()
+			nb.size = Vector3(r * 0.09, 0.0175, r * 0.16)
+			notch.mesh = nb
+			notch.material_override = ivory
+			var ang := TAU * float(k) / 24.0
+			notch.position = Vector3(cos(ang) * r * 0.98, 0.0, sin(ang) * r * 0.98)
+			notch.rotation.y = -ang
+			_button.add_child(notch)
 		var lbl := Label3D.new()
 		lbl.text = "D"
 		lbl.font = UIStyle.title_font()
-		lbl.font_size = 48
-		lbl.pixel_size = 0.0007 * tsize
-		lbl.modulate = Color("1a1a1f")
+		lbl.font_size = 64
+		lbl.pixel_size = 0.00085 * tsize
+		lbl.modulate = Color("f6e7b8")
+		lbl.outline_size = 0
 		lbl.rotation_degrees.x = -90.0
-		lbl.position.y = 0.008
-		lbl.no_depth_test = false
+		lbl.position = Vector3(0.0, 0.0175, -r * 0.02)
 		_button.add_child(lbl)
+		var sub := Label3D.new()
+		sub.text = "DEALER"
+		sub.font = UIStyle.title_font()
+		sub.font_size = 28
+		sub.pixel_size = 0.00036 * tsize
+		sub.modulate = Color("4a3510")
+		sub.outline_size = 0
+		sub.rotation_degrees.x = -90.0
+		sub.position = Vector3(0.0, 0.0175, r * 0.58)
+		_button.add_child(sub)
 		viewport.add_child(_button)
 		_button.position = _button_spot(seat)
 	var target := _button_spot(seat)
@@ -1377,6 +1444,12 @@ func set_dealer_button(seat: int) -> void:
 	tw.tween_property(_button, "position:y", target.y + card_h * 0.3, 0.12)
 	tw.tween_property(_button, "position", target + Vector3(0, card_h * 0.3, 0), 0.35).set_trans(Tween.TRANS_CUBIC)
 	tw.tween_property(_button, "position:y", target.y, 0.1)
+
+func _mat_dark() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.04, 0.035, 0.05)
+	m.roughness = 0.3
+	return m
 
 func button_point() -> Vector3:
 	return _button.position if _button != null else center
@@ -1472,31 +1545,26 @@ func _seat_yaw(seat: int) -> float:
 	return atan2(-f.x, -f.z)
 
 ## Your selectable chips stand on a tray that hangs off the rail dead centre in front of you.
-func hang_tray_center() -> Vector3:
-	var base := seat_marker_pos(0)
+func hang_tray_center(seat: int = 0) -> Vector3:
+	var base := seat_marker_pos(seat)
 	var dc := Vector3(base.x - center.x, 0.0, base.z - center.z).normalized()
 	var e := felt_extent(dc) + RAIL_W + 0.17
 	return Vector3(center.x + dc.x * e, surface_y - 0.035, center.z + dc.z * e)
 
 func tray_center(seat: int) -> Vector3:
-	if seat == 0:
-		return hang_tray_center()
-	return felt_pt(seat, 0.26, 0.62)
+	return hang_tray_center(seat)
 
 func stack_point(seat: int, d: int) -> Vector3:
 	var i: int = DENOMS.find(d)
-	if seat == 0:
-		var q := tray_center(0) + right_of(0) * (float(i) - 2.0) * _pitch() * 1.18
-		return q + Vector3(0, card_w * 0.1, 0)
-	var p := inside_felt(tray_center(seat) + right_of(seat) * (float(i) - 2.0) * _pitch(), 0.07)
-	return p + Vector3(0, card_w * 0.1, 0)
+	var q := tray_center(seat) + right_of(seat) * (float(i) - 2.0) * _pitch() * 1.18
+	return q + Vector3(0, card_w * 0.1, 0)
 
-func _build_hang_tray() -> void:
+func _build_hang_tray(seat: int) -> void:
 	var root := Node3D.new()
 	viewport.add_child(root)
-	var c := hang_tray_center()
+	var c := hang_tray_center(seat)
 	root.position = c
-	root.rotation.y = _seat_yaw(0)
+	root.rotation.y = _seat_yaw(seat)
 	var wood := StandardMaterial3D.new()
 	wood.albedo_color = Color(0.1, 0.05, 0.035)
 	wood.roughness = 0.3
@@ -1753,7 +1821,7 @@ func set_pot(amount: int) -> void:
 func _build_trays() -> void:
 	var width := _pitch() * 5.0 + 0.03
 	var depth := _pitch() * 1.25 + 0.03
-	for i in range(n_seats):
+	for i in range(1, n_seats):
 		var root := Node3D.new()
 		var brass := MeshInstance3D.new()
 		var bb := BoxMesh.new()

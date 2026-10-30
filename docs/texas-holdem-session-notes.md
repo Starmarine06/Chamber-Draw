@@ -17,6 +17,7 @@
 
 ## Presentation
 - First-person view: mouse steers the camera and the cursor is hidden. Esc opens the menu (resume, hints, settings, main menu). There are no clickable buttons.
+- Zoom: mouse wheel zooms in or out, hold Z to lean right in.
 - Keys: F fold, C call or check, R min-raise, A all-in, 1-5 add a chip, Backspace or right-click removes one, Space commits, Q peeks at your cards, T hints, G hand rankings, Tab frees the cursor, S/W/B vices.
 - Chips are real: a bet takes actual chips out of your stack, and winners' stacks grow when the pot sweeps to them.
 - Your selectable chips sit on a tray hanging off the rail in front of you.

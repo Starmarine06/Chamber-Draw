@@ -20,6 +20,8 @@ const ACTIONS := [
 	{"id": &"free_cursor", "label": "Free / hide the cursor", "key": KEY_TAB, "group": "global", "shown": true},
 	{"id": &"hints", "label": "Hold'em: toggle hints", "key": KEY_T, "group": "global", "shown": true},
 	{"id": &"rankings", "label": "Hold'em: show / hide hand rankings", "key": KEY_G, "group": "global", "shown": true},
+	{"id": &"tip_dealer", "label": "Hold'em: tip the dealer (Shift = bigger)", "key": KEY_Y, "group": "global", "shown": true},
+	{"id": &"show_cards", "label": "Hold'em: show your cards after a fold-win", "key": KEY_X, "group": "global", "shown": true},
 	{"id": &"kill_high", "label": "End the high (sober up)", "key": KEY_K, "group": "global", "shown": true},
 	{"id": &"ptt", "label": "Voice: push to talk (hold)", "key": KEY_V, "group": "global", "shown": true},
 	{"id": &"mute_mic", "label": "Voice: mute / unmute mic", "key": KEY_M, "group": "global", "shown": true},

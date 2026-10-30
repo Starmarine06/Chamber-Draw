@@ -84,19 +84,11 @@ func take(amount: int) -> Dictionary:
 		_break(found)
 	return removed
 
-## Takes one chip of denomination `d` (breaking a bigger chip when there is none). False if impossible.
+## Takes one chip of exactly denomination `d`. A bigger chip is never broken for it: false when you have none.
 func take_denom(d: int) -> bool:
-	for _guard in range(8):
-		if int(counts[d]) > 0:
-			counts[d] = int(counts[d]) - 1
-			return true
-		var found := -1
-		for s in DENOMS:
-			if s > d and int(counts[s]) > 0:
-				found = s
-		if found < 0:
-			return false
-		_break(found)
+	if int(counts[d]) > 0:
+		counts[d] = int(counts[d]) - 1
+		return true
 	return false
 
 func give(d: int, n: int = 1) -> void:

@@ -125,11 +125,14 @@ func test_bank_change_making() -> void:
 	assert_eq(b.value(), 280, "change stays in the bank")
 
 
-func test_bank_take_denom_breaks_bigger_chip() -> void:
+func test_bank_take_denom_never_breaks_a_bigger_chip() -> void:
 	var b := Bank.new()
 	b.counts = {500: 0, 100: 1, 25: 0, 5: 0, 1: 0}
-	assert_true(b.take_denom(5), "a 5 chip can be taken by breaking a 100")
-	assert_eq(b.value(), 95, "value drops by exactly 5")
+	assert_true(not b.take_denom(5), "a 5 chip is not available, the 100 stays whole")
+	assert_eq(b.value(), 100, "nothing was taken")
+	b.counts[5] = 2
+	assert_true(b.take_denom(5), "a real 5 chip can be taken")
+	assert_eq(b.value(), 105, "value drops by exactly 5")
 
 
 func test_bank_sync_both_ways() -> void:

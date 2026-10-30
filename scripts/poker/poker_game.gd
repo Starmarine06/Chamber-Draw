@@ -62,6 +62,7 @@ var _paused: bool = false
 var _thinking: int = -1
 var _revealed: Dictionary = {}
 var _winners: Dictionary = {}
+var _can_show: bool = false         # won with everyone folding: the show_cards key flashes your cards
 var _status_text: Dictionary = {}
 var _tier_cat: int = -1
 var _hand_summary: String = ""
@@ -98,6 +99,8 @@ var _pot_hidden: bool = false
 var _chip_hold: Dictionary = {}
 var crosshair: Panel
 var prompt_label: Label
+var _zoom: float = 0.0
+var _zoom_cur: float = 0.0
 var legend_label: RichTextLabel
 var winner_banner: PanelContainer
 var vices: Node
@@ -306,6 +309,7 @@ func _build_hud_extras() -> void:
 	dealer_tag.add_theme_constant_override("outline_size", 4)
 	dealer_tag.size = Vector2(80, 18)
 	add_child(dealer_tag)
+	dealer_tag.visible = false
 	help_panel = UIStyle.make_panel(Color(UIStyle.INK, 0.94))
 	help_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	help_panel.visible = false
@@ -622,6 +626,7 @@ func _reset_hand_visuals() -> void:
 	_shown_board = 0
 	_revealed.clear()
 	_winners.clear()
+	_can_show = false
 	_status_text.clear()
 	_hand_summary = ""
 	_tier_cat = -1
@@ -689,11 +694,11 @@ func _deal_animation() -> void:
 			var node: Node3D = world.make_card(int(engine.players[s].hole[rnd]))
 			var t: Transform3D = world.hole_transform(s, rnd)
 			world.set_card_pose(node, Transform3D(t.basis, world.deck_pos + Vector3(0, 0.05, 0)), 1.0)
-			world.deal_card(node, t, 0.34, 0.0, randf_range(-1.3, 1.3))
+			world.deal_card(node, t, 0.5, 0.0, randf_range(-0.5, 0.5))
 			seat_views[s].cards[rnd] = node
 			world.dealer_gesture()
 			Sound.play(&"deal", 0.0, randf_range(0.95, 1.1))
-			await _wait(0.09)
+			await _wait(0.24)
 	await _wait(0.3)
 	_anim_busy = false
 	_peek_until = Time.get_ticks_msec() + 2800
@@ -707,10 +712,13 @@ func _reveal_board() -> void:
 	var fast: bool = not engine.hand_over
 	while _shown_board < engine.board.size():
 		var batch: int = 3 if _shown_board == 0 else 1
+		var is_river: bool = _shown_board == 4
 		world.burn_card()
 		world.dealer_gesture()
 		Sound.play(&"card_slide", -4.0)
-		await _wait(0.35)
+		await _wait(0.9 if is_river else 0.35)
+		if is_river:
+			world.punch_fov(4.0)
 		for _b in range(batch):
 			var k := _shown_board
 			var t: Transform3D = world.board_transform(k)
@@ -720,7 +728,7 @@ func _reveal_board() -> void:
 			board_nodes[k] = node
 			Sound.play(&"deal")
 			await _wait(0.2)
-			world.flip_card(node, true, 0.28)
+			world.flip_card(node, true, 0.55 if is_river else 0.28)
 			world.flash_card(node)
 			Sound.play(&"card_flip", 0.0, randf_range(0.95, 1.08))
 			_shown_board += 1
@@ -965,11 +973,9 @@ func _showdown_sequence() -> void:
 	for w in _winners:
 		_pop_text(_seat_pos(int(w)) + Vector2(0, -40), "WINNER", Color("ffd877"))
 	# Winners' stacks keep their pre-award size until the pot slides over to them.
-	var gains: Dictionary = {}
-	for r2 in engine.results:
-		var ws: Array = r2.winners
-		for w2 in ws:
-			gains[int(w2)] = int(gains.get(int(w2), 0)) + int(int(r2.amount) / ws.size())
+	var gains: Dictionary = _pot_winnings()
+	# Won without a showdown: you may flash your hand if you want to (offline).
+	_can_show = not engine.showdown_reached and _winners.has(HUMAN) and not is_online and not is_tutorial
 	_chip_hold.clear()
 	for k in gains:
 		_chip_hold[int(k)] = int(engine.players[int(k)].chips) - int(gains[k])
@@ -983,8 +989,17 @@ func _showdown_sequence() -> void:
 func _winner_cinematic() -> void:
 	if engine.results.is_empty():
 		return
+	# The spotlight goes to whoever collects the most overall (side pots can have other winners).
+	var totals: Dictionary = _pot_winnings()
+	var w: int = int((engine.results[0].winners as Array)[0])
+	for k in totals:
+		if int(totals[k]) > int(totals.get(w, 0)):
+			w = int(k)
 	var r0: Dictionary = engine.results[0]
-	var w: int = int((r0.winners as Array)[0])
+	for res in engine.results:
+		if (res.winners as Array).has(w):
+			r0 = res
+			break
 	var human_won: bool = _winners.has(HUMAN)
 	_cinematic = true
 	var from := Vector2(_look_yaw, _look_pitch)
@@ -1006,6 +1021,16 @@ func _winner_cinematic() -> void:
 		if k != w and k != HUMAN and not bool(engine.players[k].folded) and bool(engine.players[k].in_hand) and engine.showdown_reached:
 			world.react(k, &"hit")
 	await _wait(2.0)
+	# Side-pot winners get their chips flicked across; the rest of the pile slides to the top winner.
+	var pot_pt := Vector3(world.center.x, world.surface_y + 0.05, world.center.z)
+	var fi := 0
+	for k in totals:
+		if int(k) == w:
+			continue
+		var dest: Vector3 = world.rack_point(100) if int(k) == HUMAN else world.stack_point(int(k), 100)
+		for n in range(4):
+			world.fly_chip(pot_pt, dest, 25 if n % 2 == 0 else 100, 0.6, Callable(), 0.1 * fi)
+			fi += 1
 	world.sweep(world.rack_point(100) if w == HUMAN else world.stack_point(w, 100))
 	Sound.play(&"chip", 0.0, 0.8)
 	await _wait(1.0)
@@ -1017,13 +1042,34 @@ func _winner_cinematic() -> void:
 	await back.finished
 	_cinematic = false
 
+## What each seat collects this hand across the main pot and every side pot: {seat: chips}.
+func _pot_winnings() -> Dictionary:
+	var won: Dictionary = {}
+	for res in engine.results:
+		var ws: Array = res.winners
+		var share: int = int(float(int(res.amount)) / float(maxi(ws.size(), 1)))
+		for k in ws:
+			won[int(k)] = int(won.get(int(k), 0)) + share
+		won[int(ws[0])] = int(won[int(ws[0])]) + int(res.amount) - share * ws.size()
+	return won
+
 func _show_winner_banner(r: Dictionary, w: int) -> void:
 	var who: String = "YOU" if w == HUMAN else String(engine.players[w].name).to_upper()
-	if (r.winners as Array).size() > 1:
+	# Side pots make several results per hand: total what each player actually collects so the
+	# banner matches the POT label instead of showing only the first (main) pot.
+	var won: Dictionary = _pot_winnings()
+	var total: int = int(won.get(w, int(r.amount)))
+	if (r.winners as Array).size() > 1 and engine.results.size() == 1:
 		winner_title.text = "SPLIT POT  %d" % int(r.amount)
 	else:
-		winner_title.text = "%s WIN%s  %d" % [who, "" if who == "YOU" else "S", int(r.amount)]
+		winner_title.text = "%s WIN%s  %d" % [who, "" if who == "YOU" else "S", total]
 	winner_sub.text = String(r.hand) if String(r.hand) != "" else "everyone else folded"
+	var others: Array = []
+	for k in won:
+		if int(k) != w:
+			others.append("%s takes %d" % ["You" if int(k) == HUMAN else String(engine.players[int(k)].name), int(won[k])])
+	if not others.is_empty():
+		winner_sub.text += "  |  side pot: " + ", ".join(others)
 	winner_title.add_theme_color_override("font_color", colors[w].lightened(0.35) if w != HUMAN else Color("ffd877"))
 	winner_banner.visible = true
 	winner_banner.reset_size()
@@ -1103,6 +1149,40 @@ func _on_fold() -> void:
 		return
 	human_acted.emit("fold", 0)
 
+## After everyone folds to you the hand stays hidden; this turns your cards over for the table.
+func _show_my_cards() -> void:
+	if not _can_show:
+		return
+	_can_show = false
+	_revealed[HUMAN] = true
+	world.show_hole(seat_views[HUMAN].cards, HUMAN)
+	Sound.play(&"card_flip", 0.0, 1.0)
+	_toast("You show your cards.")
+	_refresh_actions()
+
+## Flick the dealer a tip between hands. Tip key = 5, Shift + tip key = 25. Chips come off your real stack.
+func _tip_dealer(amount: int) -> void:
+	if is_online or is_tutorial:
+		_toast("The dealer only takes tips in offline games.")
+		return
+	if not _waiting_next or engine.players.is_empty():
+		_toast("Tip the dealer between hands.")
+		return
+	var chips: int = int(engine.players[HUMAN].chips)
+	if chips < amount:
+		_toast("Not enough chips for a tip.")
+		return
+	engine.players[HUMAN].chips = chips - amount
+	var d: int = 25 if amount >= 25 else 5
+	var n: int = maxi(amount / d, 1)
+	var to: Vector3 = Vector3(world.dealer_pt.x, world.surface_y, world.dealer_pt.z)
+	for i in range(n):
+		world.fly_chip(world.rack_point(d), to, d, 0.4, Callable(), 0.08 * i)
+	Sound.play(&"chip", 0.0, 1.0)
+	world.dealer_gesture()
+	_toast("Tipped the dealer %d. \"Much obliged.\"" % amount)
+	_refresh_all()
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	var ke := event as InputEventKey
 	if ke == null or not ke.pressed or ke.echo:
@@ -1112,6 +1192,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if Keybinds.matches(ke, &"rankings"):
 		_toggle_rankings()
+		return
+	if Keybinds.matches(ke, &"tip_dealer"):
+		_tip_dealer(25 if ke.shift_pressed else 5)
+		return
+	if Keybinds.matches(ke, &"show_cards"):
+		_show_my_cards()
 		return
 	if vices != null and not is_tutorial and ke.keycode in [KEY_S, KEY_W, KEY_B] and vices.handle_key(ke):
 		return
@@ -1633,7 +1719,7 @@ func _add_chip(d: int) -> void:
 	var remaining: int = int(engine.players[HUMAN].chips) - _pending_value()
 	if d > remaining or not world.bank_of(0).take_denom(d):
 		Sound.play(&"invalid")
-		_toast("You don't have a %d chip's worth left." % d)
+		_toast("You're out of %d chips." % d)
 		return
 	_pending[d] = int(_pending.get(d, 0)) + 1
 	_pending_order.append(d)
@@ -1725,6 +1811,8 @@ func _on_click() -> void:
 			_add_chip(int(_hover.d))
 		"pile":
 			_commit_pile()
+		"pending":
+			_remove_chip()
 		"cards":
 			_click_cards()
 
@@ -1734,6 +1822,12 @@ func _input(event: InputEvent) -> void:
 		return
 	if not _looking():
 		return
+	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+		var wb := (event as InputEventMouseButton).button_index
+		if wb == MOUSE_BUTTON_WHEEL_UP or wb == MOUSE_BUTTON_WHEEL_DOWN:
+			_zoom = clampf(_zoom + (0.15 if wb == MOUSE_BUTTON_WHEEL_UP else -0.15), 0.0, 1.0)
+			get_viewport().set_input_as_handled()
+			return
 	if event is InputEventMouseMotion:
 		var rel: Vector2 = (event as InputEventMouseMotion).relative
 		if not _cinematic:
@@ -1755,7 +1849,7 @@ func _update_aim() -> void:
 	_hover = {}
 	var looking := _looking()
 	crosshair.visible = looking and not _cinematic
-	prompt_label.visible = crosshair.visible
+	prompt_label.visible = false
 	if not looking or _cinematic:
 		world.highlight_rack(0)
 		return
@@ -1769,6 +1863,10 @@ func _update_aim() -> void:
 		if dist < best_d:
 			best_d = dist
 			_hover = {"kind": "chip", "d": d}
+	if _hover.is_empty() and not _pending_order.is_empty():
+		var pp: Vector3 = world.pending_point()
+		if not world.is_behind(pp) and c.distance_to(world.project(pp)) < 44.0:
+			_hover = {"kind": "pending"}
 	if _hover.is_empty():
 		var rp: Vector3 = world.ring_point()
 		if not world.is_behind(rp) and c.distance_to(world.project(rp)) < 44.0:
@@ -1781,6 +1879,8 @@ func _update_aim() -> void:
 	match String(_hover.get("kind", "")):
 		"chip":
 			txt = "CLICK: add a %d chip" % int(_hover.d)
+		"pending":
+			txt = "CLICK: take a chip back"
 		"pile":
 			var v := _pending_value()
 			if _waiting_next:
@@ -1917,7 +2017,7 @@ func _layout_panels_only() -> void:
 		pile_label.position = world.project(world.pending_point()) + Vector2(-pile_label.size.x / 2.0, 30.0)
 	if dealer_tag != null and world.dealer_actor != null:
 		var hd: Vector3 = world.head_anchor_of(world.dealer_actor)
-		dealer_tag.position = Vector2(world.project(hd).x - 40.0, maxf(world.project(hd).y - 22.0, 72.0))
+		dealer_tag.position = Vector2(world.project(hd).x - 40.0, maxf(world.project(hd).y - 22.0, 170.0))
 
 func _stage_text() -> String:
 	if engine.hand_over:
@@ -1965,6 +2065,10 @@ func _refresh_actions() -> void:
 	if _waiting_next:
 		var broke: bool = int(engine.players[HUMAN].chips) <= 0
 		parts.append(_key("SPACE", "CONTINUE" if broke else "NEXT HAND"))
+		if not is_online and not is_tutorial:
+			parts.append(_key(Keybinds.key_name(Keybinds.key_of(&"tip_dealer")), "TIP DEALER 5"))
+		if _can_show:
+			parts.append(_key(Keybinds.key_name(Keybinds.key_of(&"show_cards")), "SHOW YOUR CARDS"))
 	elif my_turn:
 		var owe: int = engine.to_call(HUMAN)
 		var free: bool = engine.can_check(HUMAN)
@@ -2253,8 +2357,17 @@ func _process(_delta: float) -> void:
 		_layout_panels_only()
 		_update_aim()
 		_update_peek(_delta)
+		_update_zoom(_delta)
 	if spot_ring and spot_ring.visible:
 		_follow_spot()
+
+## Zoom: mouse wheel sets how far you are zoomed in, hold Z to lean right in (it eases back on release).
+func _update_zoom(delta: float) -> void:
+	var want: float = 1.0 if Input.is_key_pressed(KEY_Z) and not _paused else _zoom
+	_zoom_cur = lerpf(_zoom_cur, want, 1.0 - exp(-delta * 9.0))
+	if absf(_zoom_cur - want) < 0.002:
+		_zoom_cur = want
+	world.set_zoom(_zoom_cur)
 
 func human_card_rect() -> Rect2:
 	var pts: Array = world.card_corners(world.hole_transform(HUMAN, 0)) + world.card_corners(world.hole_transform(HUMAN, 1))
