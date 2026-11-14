@@ -1,6 +1,6 @@
 # Chamber Draw
 
-**Every draw could be your last.**  ·  *v1.5.2*
+**Every draw could be your last.**  ·  *v1.6.0*
 
 *A fast, chaotic party card game built in Godot — shed your hand, dodge the bombs, and pray the Chamber misses you.*
 
@@ -23,6 +23,7 @@ Chamber Draw is a multiplayer shedding card game that mashes the flow of **Uno**
 - **A deck packed with malice.** Swap Hands, Peek (reorder the top 3 — secretly), Choose a Deck (steer an opponent into danger), Rotate Decks (burn the table's reads), the rare Draw Ten hand-flooder, Wild Color, and the villainous Wild Sabotage.
 - **Props, not placeholder UI.** A real 3D poker table with per-seat characters, hand-some animated card flights (deal, draw, discard), a live discard pile that shows the actual top card, procedural night sky, Kenney UI art, and a 30-second turn timer ring tinted to the current player's color.
 - **Full table manners.** Uno-style Jump-In responses, stackable +N draw cards (any value, any color — red +4 on green +2), cross-color Skip/Reverse matching, and a physical turn-order ring so nobody argues who's next.
+- **Texas Hold'em, same smoky room.** New in 1.6.0: a full first-person Hold'em table with real chips you can count, blinds, side pots, a dealer who burns cards and takes tips, a rigged one-hand tutorial, and bots or friends online. Bluff with the same cigarette in your hand.
 - **Table life.** Light a cigarette or pour a drink without leaving your seat: scroll to sip, a bartender walks over to refill your glass, and you can keep playing your cards while he pours. Different drinks hit differently — and drink too much and you **pass out**: your next turn is skipped and you wake up with 3 extra cards (still a little drunk).
 - **Your own color.** Every player picks a seat color; **no two players ever share one**, online or offline. It tints your turn border, timer ring and name tag.
 - **Voice chat (online).** Talk to the table over Epic's lobby voice: push-to-talk or open mic, mute, deafen, volume sliders and per-player mute.
@@ -36,7 +37,7 @@ The rules are simple enough for a party, deep enough for a grudge.
 2. **Play a card** that matches the pile's color *or* number, or sling an action/wild card and make the table groan.
 3. **Can't — or shouldn't — play? Draw.** And *from which pile?* That's the whole game. This is your choice, and it's the only one with a bomb in it.
 4. **Boom?** The Bomb hits the Chamber. Resolve it and keep playing — alive, stacked, or... not.
-5. **Dump your hand.** First player to shed every card wins. In **Last One Standing**, be the last player at the table.
+5. **Dump your hand.** First player to shed every card wins.
 
 Forced draws (Draw Two/Four/Ten) are **Bomb-proof** — they only pull safe cards, so you can weaponize them without self-sabotaging. Voluntary draws carry the full risk. Balance lever, engineered in.
 
@@ -58,7 +59,7 @@ Forced draws (Draw Two/Four/Ten) are **Bomb-proof** — they only pull safe card
 ## Modes
 
 - **Shedding Race** *(default)* — first to empty their hand wins. A Live Chamber result hits you with 4 penalty cards and a skipped turn instead of knocking you out. Fast and party-friendly.
-- **Last One Standing** — a Live Chamber result eliminates you. Keep playing until only one player remains. Higher tension, sharpened knives.
+- **Texas Hold'em** *(new in 1.6.0)*: up to 8 seats at a racetrack table, first-person. Blinds, betting rounds, side pots and showdowns where the winner's cards glow and the pot sweeps over. Works offline against bots, in the tutorial and online.
 
 ## Play it anywhere
 
@@ -79,6 +80,11 @@ Forced draws (Draw Two/Four/Ten) are **Bomb-proof** — they only pull safe card
 | **V (hold)** | Voice: push-to-talk. |
 | **M / N** | Voice: mute your mic / deafen. |
 | **Tab** | Free the mouse cursor for clicking UI. |
+| **Z (hold) / Ctrl+scroll** | Zoom the camera in on the table. |
+| **Hold'em: F / C / R / A** | Fold / call or check / min-raise / all-in. |
+| **Hold'em: 1–5, Backspace, Space** | Add a chip / take one back / commit the bet. |
+| **Hold'em: Q / T / G** | Peek at your cards / hints / hand rankings. |
+| **Hold'em: Y / X** | Tip the dealer (Shift+Y tips more) / show your cards after a fold win. |
 
 All keys above except 1–9, Esc and the arrows can be rebound in **Settings → Controls**; voice mode (push-to-talk vs open mic) and volumes live in **Settings → General**.
 
@@ -86,7 +92,7 @@ All keys above except 1–9, Esc and the arrows can be rebound in **Settings →
 
 Fully built out — you can even skip setup:
 
-- **Prebuilt binaries:** `builds/` contains the Windows executable and a **Chamber Draw Installer.exe**.
+- **Prebuilt:** grab **Chamber Draw Installer.exe** from the [latest release](https://github.com/Starmarine06/Chamber-Draw/releases/latest).
 - **From source** — requires **Godot 4.7+**:
   1. Open this folder in the Godot editor (import `project.godot`).
   2. Run `scenes/menu.tscn` (the main scene).
